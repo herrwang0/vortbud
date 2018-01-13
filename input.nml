@@ -1,0 +1,41 @@
+&calcmode
+cmode = 2
+/
+
+&bnds
+xl_reg = 1581
+xr_reg = 1680
+yd_reg = 1203
+yu_reg = 1304
+subreg = "test"
+yrlist_in = 2009
+mnlist_in = 12
+dalist_in = 17
+xi_dp = 34
+yi_dp = 26
+zi_dpst = 32
+zi_dped = 40
+ti_dp = 10
+/
+
+&grid
+fn_grid = "/Users/hewang/data/pop0_1/ocn_static_grid.nc"
+fn_dz = "/Users/hewang/data/pop0_1/ocn_static_dz.nc"
+fn_cons = "/Users/hewang/data/pop0_1/ocn_constant.nc"
+/
+
+&input
+fn_in_dir = "/Volumes/BLACKFYRE/data/pop0_1/daily_mean/"
+fn_in_pfx = "ia_top_tx0.1_v2_yel_patc_1948_intel.pop.h.IO.nday1."
+fn_in_sfx = ""
+fn_in_dlm = "-"
+xl_ref = 1422
+xr_ref = 2150
+yd_ref = 978
+yu_ref = 1510
+/
+
+&output
+fn_out_dir = "./"
+fn_out_pfx = "test_v4_1_"
+/
