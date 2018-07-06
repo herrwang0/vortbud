@@ -169,8 +169,8 @@ subroutine find_daily_file(fn_in_dir, fn_in_pfx, yr, mon, day, fn)
     write(fn_short, '(A, I4, A, I0.2, A, I0.2, A)') &
         trim(fn_in_pfx), yr, '-', mon, '-', day, '.nc'
 
-    write(fn, '(A, A)') &
-        trim(fn_in_dir), trim(fn_short)
+    write(fn, '(A, A, A)') &
+        trim(fn_in_dir), '/', trim(fn_short)
     iostat = nf90_open(trim(fn), NF90_NOWRITE, ncid)
     if (iostat == nf90_noerr) return
 
