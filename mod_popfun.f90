@@ -49,7 +49,7 @@ endfunction t2u
 
 ! This is slightly different from the POP code. Instead of specifiy dxu and dyu as
 ! the weight function, the more general form of the function here allows dzu to be
-! included in the weigth function (which is how it is calculated in the vorticity
+! included in the weight function (which is how it is calculated in the vorticity
 ! budget here)
 function zcurl(varu, varv, wgtu, wgtv, wgt)
   use derives, only : ddx, ddy
