@@ -380,7 +380,7 @@ subroutine create_outputfiles(yyyymmdd)
     print*, 'Creating output error file ...'
     write(fn_out_err, '(A, A, A, A, A, A)') &
        trim(fn_out_dir), trim(fn_out_pfx), 'decompErrs_', trim(yyyymmdd), trim(fn_out_sfx), '.nc'
-    print*, '  Output error file: ', trim(fn_out)
+    print*, '  Output error file: ', trim(fn_out_err)
 
     stat_create = nf90_create(fn_out_err, cmode=or(nf90_clobber,nf90_64bit_offset), ncid=ncid_error)
     stat_defdim = nf90_def_dim(ncid_error, "nlon", nx, dimid_out_lon)
@@ -478,7 +478,7 @@ subroutine init_zetavars()
 endsubroutine
 
 subroutine load_vars(yyyymmdd, iyr, imn, idy)
-  use popload, only : load_current_day
+  use popload, only : load_current_day, find_daily_file
   implicit none
   integer, intent(in) :: iyr, imn, idy
   character(len = *), intent(in) :: yyyymmdd
@@ -489,8 +489,9 @@ subroutine load_vars(yyyymmdd, iyr, imn, idy)
   print*, '  '
   print*, 'Loading variables (velocity, mom. terms) from input files'
 
-  write(fn_in, '(A, A, A, A, A)') &
-      trim(fn_in_dir), trim(fn_in_pfx), trim(yyyymmdd), trim(fn_in_sfx), '.nc'
+  ! write(fn_in, '(A, A, A, A, A)') &
+  !     trim(fn_in_dir), trim(fn_in_pfx), trim(yyyymmdd), trim(fn_in_sfx), '.nc'
+  call find_daily_file(fn_in_dir, fn_in_pfx, iyr, imn, idy, fn_in)
   print*, 'Reading from file : ', trim(fn_in)
 
   call load_current_day(iyr, imn, idy, fn_in, 'UVEL'  , WORK)
@@ -642,4 +643,5 @@ subroutine close_outputfiles()
   !   deallocate(wc)
   ! endif
 endsubroutine
+
 endmodule

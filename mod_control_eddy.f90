@@ -221,7 +221,7 @@ subroutine create_outputfiles(yyyymmdd)
   print*, '  Output file: ', trim(fn_out)
 
   print*, '  Start netcdf define ...'
-  stat_create = nf90_create(fn_out, NF90_CLOBBER, ncid_out)
+  stat_create = nf90_create(fn_out, cmode=or(nf90_clobber,nf90_64bit_offset), ncid=ncid_out)
   stat_defdim = nf90_def_dim(ncid_out, "nlon", nx, dimid_out_lon)
   stat_defdim = nf90_def_dim(ncid_out, "nlat", ny, dimid_out_lat)
   stat_defdim = nf90_def_dim(ncid_out, "z_t" , nz, dimid_out_dep)
@@ -493,9 +493,12 @@ subroutine loadave_vars(yr, da, secl)
   print*, 'Loading velocity from input files, averaging over ', secl , 'days'
 
   call doy2date(da, mm, dd)
-  write(yyyymmdd, '(I0.4, A, I0.2, A, I0.2)') yr, trim(fn_in_dlm), mm, trim(fn_in_dlm), dd
-  write(fn_in, '(A, A, A, A, A)') &
-      trim(fn_in_dir), trim(fn_in_pfx), trim(yyyymmdd), trim(fn_in_sfx), '.nc'
+  ! write(yyyymmdd, '(I0.4, A, I0.2, A, I0.2)') yr, trim(fn_in_dlm), mm, trim(fn_in_dlm), dd
+  ! write(fn_in, '(A, A, A, A, A)') &
+  !     trim(fn_in_dir), trim(fn_in_pfx), trim(yyyymmdd), trim(fn_in_sfx), '.nc'
+
+  call find_daily_file(fn_in_dir, fn_in_pfx, yr, mm, dd, fn_in)
+  print*, 'Reading from file : ', trim(fn_in)
 
   write(yyyymmdd, '(I0.4, A, I0.2, A, I0.2)') yr, trim(fn_in_dlm), mm, trim(fn_in_dlm), dd
   write(fn_zeta, '(A, A, A, A, A)') &
@@ -670,5 +673,43 @@ subroutine doy2date(ida, mm, dd)
 
   mm = imn
   dd = ida - sum(eom(1:mm)) + eom(mm)
+endsubroutine
+
+subroutine find_daily_file(fn_in_dir, fn_in_pfx, yr, mon, day, fn)
+    use netcdf
+    implicit none
+    character(len = *), intent(in) :: fn_in_dir, fn_in_pfx
+    integer, intent(in) :: yr, mon, day
+    character(len = 300) :: fn_short
+    character(len = 300), intent(inout) :: fn
+    integer :: iostat, ncid
+
+    write(fn_short, '(A, I4, A, I0.2, A, I0.2, A)') &
+        trim(fn_in_pfx), yr, '-', mon, '-', day, '.nc'
+
+    write(fn, '(A, A, I4, A, I0.2, A, A)') &
+        trim(fn_in_dir), '/pop_', yr, '-', mon, '/', trim(fn_short)
+    iostat = nf90_open(trim(fn), NF90_NOWRITE, ncid)
+
+    if (iostat == nf90_noerr) return
+
+    write(fn, '(A, A, I4, I0.2, A, A)') &
+        trim(fn_in_dir), 'z_', yr, mon, '/', trim(fn_short)
+    iostat = nf90_open(trim(fn), NF90_NOWRITE, ncid)
+
+    if (iostat == nf90_noerr) return
+
+    select case (day)
+        case (1:9)
+            write(fn, '(A, A, I4, A, I0.2, A, A)') &
+                trim(fn_in_dir), '/pop_', yr, '-', mon, '_1/', trim(fn_short)
+        case (10:19)
+            write(fn, '(A, A, I4, A, I0.2, A, A)') &
+                trim(fn_in_dir), '/pop_', yr, '-', mon, '_2/', trim(fn_short)
+        case (20:)
+            write(fn, '(A, A, I4, A, I0.2, A, A)') &
+                trim(fn_in_dir), '/pop_', yr, '-', mon, '_3/', trim(fn_short)
+    endselect
+    return
 endsubroutine
 endmodule
