@@ -482,6 +482,7 @@ endsubroutine
 
 subroutine loadave_vars(yr, da, secl)
   use ncio, only : nc_read
+  use popload, only : find_daily_file
   implicit none
   integer, intent(in):: yr, da, secl
   integer :: mm, dd
@@ -673,43 +674,5 @@ subroutine doy2date(ida, mm, dd)
 
   mm = imn
   dd = ida - sum(eom(1:mm)) + eom(mm)
-endsubroutine
-
-subroutine find_daily_file(fn_in_dir, fn_in_pfx, yr, mon, day, fn)
-    use netcdf
-    implicit none
-    character(len = *), intent(in) :: fn_in_dir, fn_in_pfx
-    integer, intent(in) :: yr, mon, day
-    character(len = 300) :: fn_short
-    character(len = 300), intent(inout) :: fn
-    integer :: iostat, ncid
-
-    write(fn_short, '(A, I4, A, I0.2, A, I0.2, A)') &
-        trim(fn_in_pfx), yr, '-', mon, '-', day, '.nc'
-
-    write(fn, '(A, A, I4, A, I0.2, A, A)') &
-        trim(fn_in_dir), '/pop_', yr, '-', mon, '/', trim(fn_short)
-    iostat = nf90_open(trim(fn), NF90_NOWRITE, ncid)
-
-    if (iostat == nf90_noerr) return
-
-    write(fn, '(A, A, I4, I0.2, A, A)') &
-        trim(fn_in_dir), 'z_', yr, mon, '/', trim(fn_short)
-    iostat = nf90_open(trim(fn), NF90_NOWRITE, ncid)
-
-    if (iostat == nf90_noerr) return
-
-    select case (day)
-        case (1:9)
-            write(fn, '(A, A, I4, A, I0.2, A, A)') &
-                trim(fn_in_dir), '/pop_', yr, '-', mon, '_1/', trim(fn_short)
-        case (10:19)
-            write(fn, '(A, A, I4, A, I0.2, A, A)') &
-                trim(fn_in_dir), '/pop_', yr, '-', mon, '_2/', trim(fn_short)
-        case (20:)
-            write(fn, '(A, A, I4, A, I0.2, A, A)') &
-                trim(fn_in_dir), '/pop_', yr, '-', mon, '_3/', trim(fn_short)
-    endselect
-    return
 endsubroutine
 endmodule
