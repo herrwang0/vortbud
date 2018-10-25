@@ -1,16 +1,16 @@
 all: zetaeq meaneddy
 obj = mod_params.o mod_zeta.o mod_popfun.o mod_popload.o mod_ncio.o mod_derives.o
 f90c = ifort
-# flag = -I$(NETCDF_DIR)/include -lnetcdff
+#flag = -I$(NETCDF_DIR)/include -lnetcdff
 flag = -L/Users/hewang/Library/netcdf/lib -lnetcdff  -I/Users/hewang/Library/netcdf/include
 
 zetaeq: zetaeq.x
-meaneddy: zetaeq_meaneddy.x
+#meaneddy: zetaeq_meaneddy.x
 
 zetaeq.x: main.f90 $(obj) mod_control.o
 	$(f90c) -o zetaeq.x main.f90 mod_control.o $(obj) $(flag)
-zetaeq_meaneddy.x: main_eddy.f90 $(obj) mod_control_eddy.o
-	$(f90c) -o zetaeq_meaneddy.x main_eddy.f90 mod_control_eddy.o $(obj) $(flag)
+#zetaeq_meaneddy.x: main_eddy.f90 $(obj) mod_control_eddy.o
+#	$(f90c) -o zetaeq_meaneddy.x main_eddy.f90 mod_control_eddy.o $(obj) $(flag)
 
 mod_control_eddy.o: mod_control_eddy.f90 mod_zeta.o mod_popload.o mod_ncio.o mod_params.o
 	$(f90c) -c mod_control_eddy.f90 $(flag)

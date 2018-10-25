@@ -6,8 +6,8 @@ module control_eddy
                    tlat, tlong, z_t
   implicit none
   private
-  public :: load_params, get_yyyymmdd, init_zetavars, init_outputvars, create_outputfiles, loadave_vars, &
-            write_outputfiles, release_vars, close_outputfiles
+  public :: load_params, get_yyyymmdd, init_outputvars, create_outputfiles, loadave_vars, &
+            write_outputfiles, close_outputfiles !, init_zetavars, release_vars
 
   !!----------------------------------------------------------------------------
   ! Input namelist file name
@@ -419,32 +419,32 @@ subroutine create_outputfiles(yyyymmdd)
   stat_putvar = nf90_put_var(ncid_out, varid_out_dep,  z_t)
 endsubroutine
 
-subroutine init_zetavars()
-  print*, "  "
-  print*, "Initializing zeta module variables ..."
-
-  allocate(uc(nx, ny, nz), vc(nx, ny, nz), wc(nx, ny, nz))
-  allocate(advu (nx, ny, nz), advv (nx, ny, nz), advw (nx, ny, nz), &
-           advVx(nx, ny, nz), advVy(nx, ny, nz), advVz(nx, ny, nz), &
-           curlmet(nx, ny, nz), err_nldecomp(nx, ny, nz))
-  allocate(rr_rev (nx, ny, nz), rr_cha(nx, ny, nz))
-
-  uc = 0.
-  vc = 0.
-  wc = 0.
-
-  advu  = 0.
-  advv  = 0.
-  advw  = 0.
-  advVx = 0.
-  advVy = 0.
-  advVz = 0.
-  curlmet = 0.
-  err_nldecomp = 0.
-
-  rr_rev = 0.
-  rr_cha = 0.
-endsubroutine
+! subroutine init_zetavars()
+!   print*, "  "
+!   print*, "Initializing zeta module variables ..."
+!
+!   allocate(uc(nx, ny, nz), vc(nx, ny, nz), wc(nx, ny, nz))
+!   allocate(advu (nx, ny, nz), advv (nx, ny, nz), advw (nx, ny, nz), &
+!            advVx(nx, ny, nz), advVy(nx, ny, nz), advVz(nx, ny, nz), &
+!            curlmet(nx, ny, nz), err_nldecomp(nx, ny, nz))
+!   allocate(rr_rev (nx, ny, nz), rr_cha(nx, ny, nz))
+!
+!   uc = 0.
+!   vc = 0.
+!   wc = 0.
+!
+!   advu  = 0.
+!   advv  = 0.
+!   advw  = 0.
+!   advVx = 0.
+!   advVy = 0.
+!   advVz = 0.
+!   curlmet = 0.
+!   err_nldecomp = 0.
+!
+!   rr_rev = 0.
+!   rr_cha = 0.
+! endsubroutine
 
 subroutine init_outputvars()
   print*, "  "
@@ -642,14 +642,14 @@ subroutine write_outputfiles()
   print*, '  Finished writing zeta mean eddy equation file '
 endsubroutine
 
-subroutine release_vars()
-  print*, " "
-  print*, '  Deallocating zeta and output variables ...'
-
-  deallocate(uc, vc, wc, advu, advv, advw, advVx, advVy, advVz, curlmet, err_nldecomp, rr_rev, rr_cha)
-  deallocate(curlnonlm, betavm, stretchpm, errcorm, curlpgradm, curlhdiffm, curlvdiffm, resm, err_nlsubm, &
-             advuT, advvT, advwT, advVxT, advVyT, advVzT, curlmetT, err_nldecompT)
-endsubroutine
+! subroutine release_vars()
+!   print*, " "
+!   print*, '  Deallocating zeta and output variables ...'
+!
+!   deallocate(uc, vc, wc, advu, advv, advw, advVx, advVy, advVz, curlmet, err_nldecomp, rr_rev, rr_cha)
+!   deallocate(curlnonlm, betavm, stretchpm, errcorm, curlpgradm, curlhdiffm, curlvdiffm, resm, err_nlsubm, &
+!              advuT, advvT, advwT, advVxT, advVyT, advVzT, curlmetT, err_nldecompT)
+! endsubroutine
 
 subroutine close_outputfiles()
   use netcdf
