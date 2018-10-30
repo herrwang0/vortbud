@@ -1,10 +1,14 @@
 &calcmode
 ifcurl     = .True.
 ifdecomp   = .True.
+ifdecompdebug = .True.
+/
+
+&mecmode
 ifmeaneddy = .True.
 ifmeanclm  = .False.
-meanfreq = "a"
-ifdecomp_debug = .False.
+seclist_in_st = 2
+seclist_in_ed = 10
 /
 
 &bnds
@@ -18,7 +22,7 @@ mnlist_in = 12
 dalist_in = 17
 xi_dp = 20
 yi_dp = 20
-zi_dpst = 6 
+zi_dpst = 6
 zi_dped = 10
 ti_dp = 1
 /

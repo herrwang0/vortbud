@@ -3,27 +3,37 @@ module control
     use zeta, only : uc, vc, wc, ssh, advx, advy, gradx, grady, hdiffx, hdiffy, vdiffx, vdiffy, &
                      curlnonl, betav, stretchp, err_cor, curlpgrad, curlhdiff, curlvdiff, res, &
                      curladv, curlmet, err_nlsub, advu, advv, advw, advVx, advVy, advVz, err_nldecomp, &
-                     rr_rev, rr_cha, tlat, tlong, z_t
+                     rr_rev, rr_cha, tlat, tlong, z_t, init_zetavars_output
     implicit none
     private
-    ! public :: load_params, loadave_vars_sf, load_mean_sf, get_mmdd, get_yyyymmdd, create_outputfiles, write_outputfiles, close_outputfiles
-    public :: load_params, loadave_vars_sf
-    !!----------------------------------------------------------------------------
+    ! public :: load_params, loadave_vars_sf, get_mmdd, get_yyyymmdd, create_outputfiles, write_outputfiles, close_outputfiles
+    public :: load_params, loadave_vars_sf, load_mean_sf, loadave_zeta_sf, get_mmdd, get_yyyymmdd, create_outputfiles, write_outputfiles, close_outputfiles, output_me, init_meaneddy_vars
+
+    !!--------------------------------------------------------------------------
     ! * Input namelist file name *
     character(len = *), parameter, public :: fn_namelist = 'input.nml'
 
-    !!----------------------------------------------------------------------------
+    !!--------------------------------------------------------------------------
     ! * Calculation mode *
-    logical, public :: ifcurl, ifdecomp, ifmeaneddy, ifmeanclm, ifdecompdebug
+    logical, public :: ifcurl, ifdecomp, ifdecompdebug = .False.
 
-    !!----------------------------------------------------------------------------
+    !!--------------------------------------------------------------------------
     ! * Mean field frequency *
-    ! a) meanfreq = "a" or meqnfreq = "m". For monthly and annual
-    ! b) nda_sec: Fixed number of days in each section
+    ! Date format
+    ! Four options in input.nml (listed by prioity)
+    ! (a) meanfreq: period name ("a" for annual, "m" for monthly)
+    ! (b) seclist_in_st, seclist_in_ed: list of starting and ending date
+    ! (c) secst, seced: starting and ending day (of a year) for a single section
+    ! (d) nda_sec: Fixed number of days in each section
+    logical, public :: ifmeaneddy, ifmeanclm
     character(len = 5), public :: meanfreq = ""
+    integer, dimension(365) :: seclist_in_st = 0, seclist_in_ed = 0
+    integer, public :: secst = 0, seced = 0
     integer, public :: nda_sec = 365
+    ! list of sections for mean eddy decomposition
+    integer, allocatable, public :: seclist(:,:)
 
-    !!----------------------------------------------------------------------------
+    !!--------------------------------------------------------------------------
     ! * Input file info *
     ! Input file directory (suppose in the same directory)
     character(len = 300), public :: fn_in_dir = "/lustre/atlas1/cli115/proj-shared/jritchie/SIO/MODEL_DATA/yelpatch60/IOC/DATA/DAT_IO_all/nday1/"
@@ -36,6 +46,16 @@ module control
     ! Domain boundary indices of the input file (relative to the entire globe. Here, from 3600x2400 )
     integer, public :: xl_ref = 1489, xr_ref = 1901, yd_ref = 1101, yu_ref = 1401
 
+    !!--------------------------------------------------------------------------
+    ! * Date for the main loop *
+    ! Date format
+    ! Two options in input.nml for yr, mn and da (listed by prioity)
+    ! (a): list
+    ! (b): starting and ending (st, ed)
+    ! For year, additonal option is the name for climatology (yrnm_clm). If none is provide, then fatal error.
+    ! For month and days, if neither list or st/ed is provided, then assume 12 months and 31* days
+    ! If any negative number appears in mnlist, dalist, then assume average at this level.
+    !    For example, mnlist_in = -1 indicates input file is annually averaged (therefore, no mnlist AND dalist needed).
     ! Starting and ending year
     integer, public :: yrst = 2005, yred = 2009
     ! Starting and ending month
@@ -58,9 +78,6 @@ module control
     character(len=9), public :: yrnm_clm = ""
     ! Generated month/day part of the name if climatology is calculated here
     character(len=9), public :: avnm_clm = ""
-
-    ! list of sections for mean eddy decomposition
-    integer, allocatable, public :: sec(:,:)
 
     !!----------------------------------------------------------------------------
     ! * output file info *
@@ -89,13 +106,14 @@ module control
     !!----------------------------------------------------------------------------
     real(kind=kd_r), dimension(:, :, :), allocatable, public :: &
         advuT, advvT, advwT, advVxT, advVyT, advVzT, curlmetT, err_nldecompT
-    integer, public :: varid_out_advum    , varid_out_advvm    , varid_out_advwm , &
-                       varid_out_advVxm   , varid_out_advVym   , varid_out_advVzm, &
-                       varid_out_curlmetm , varid_out_errnldcmpm
+    integer, public :: varid_out_advue    , varid_out_advve    , varid_out_advwe , &
+                       varid_out_advVxe   , varid_out_advVye   , varid_out_advVze, &
+                       varid_out_curlmete , varid_out_errnldcmpe
 
 
     !!----------------------------------------------------------------------------
-    namelist /calcmode/ ifcurl, ifdecomp, ifmeaneddy, ifmeanclm, meanfreq, nda_sec, ifdecompdebug
+    namelist /calcmode/ ifcurl, ifdecomp, ifdecompdebug
+    namelist /mecmode/ ifmeaneddy, ifmeanclm, meanfreq, nda_sec, seclist_in_st, seclist_in_ed, secst, seced
     namelist /bnds/ xl_reg, xr_reg, yd_reg, yu_reg, subreg, yrst, yred, mnst, mned, dast, daed, &
                     yrnm_clm, yrlist_in, mnlist_in, dalist_in, xi_dp, yi_dp, zi_dpst, zi_dped, ti_dp
     namelist /grid/ fn_grid, fn_dz, fn_cons
@@ -113,6 +131,8 @@ module control
         open(101, file=fn_namelist, status="old", iostat=nml_error)
         read(101, nml=calcmode, iostat=nml_error)
           print*, "input <calcmode> error: ", nml_error
+        read(101, nml=mecmode, iostat=nml_error)
+          print*, "input <mecmode> error: ", nml_error
         read(101, nml=bnds, iostat=nml_error)
           print*, "input <bnds> error: ", nml_error
         read(101, nml=grid, iostat=nml_error)
@@ -207,16 +227,8 @@ module control
         ny = yu - yd + 1
 
         !-------------------------------------------
-        ! * Date for the main loop *
+        ! * Interpreting date for the main loop *
         !-------------------------------------------
-        ! Date format
-        ! Two options in input.nml for yr, mn and da
-        ! (a): starting and ending (st, ed)
-        ! (b): list
-        ! For year, additonal option is the name for climatology (yrnm_clm). If none is provide, then fatal error.
-        ! For month and days, if neither list or st/ed is provided, then assume 12 months and 31* days
-        ! If any negative number appears in mnlist, dalist, then assume average at this level.
-        !    For example, mnlist_in = -1 indicates input file is annually averaged (therefore, no mnlist AND dalist needed).
         if (len(trim(yrnm_clm)) > 0) then
             nyr = 1
             allocate(yrlist(nyr))
@@ -298,26 +310,36 @@ module control
         if (meanfreq=="m") then
             ! nda_sec = 0
             nsec = 12
-            allocate(sec(nsec, 2))
+            allocate(seclist(nsec, 2))
             do isec = 1, nsec
-                sec(isec, 1) = 1 + sum(eom(1:isec)) - eom(isec)
-                sec(isec, 2) = sum(eom(1:isec))
+                seclist(isec, 1) = 1 + sum(eom(1:isec)) - eom(isec)
+                seclist(isec, 2) = sum(eom(1:isec))
             enddo
         elseif (meanfreq=="a") then
             ! nda_sec = 365
             nsec = 1
-            allocate(sec(nsec, 2))
-            sec(1, 1) = 1
-            sec(1, 2) = 365
+            allocate(seclist(nsec, 2))
+            seclist(1, 1) = 1
+            seclist(1, 2) = 365
+        elseif (count(seclist_in_st/=0) /= 0 .and. all(seclist_in_st >= 0) .and. &
+                count(seclist_in_ed/=0) /= 0 .and. all(seclist_in_ed >= 0)) then
+            nsec = min(count(seclist_in_st/=0), count(seclist_in_ed/=0))
+            allocate(seclist(nsec, 2))
+            seclist(:, 1) = seclist_in_st(1:nsec)
+            seclist(:, 2) = seclist_in_ed(1:nsec)
+        elseif (seced >= secst /= 0 .and. secst > 0) then
+            nsec = 1
+            allocate(seclist(nsec, 2))
+            seclist(1, 1) = secst
+            seclist(1, 2) = seced
         else
             nsec = ceiling(365. / nda_sec)
-            allocate(sec(nsec, 2))
+            allocate(seclist(nsec, 2))
             do isec = 1, nsec
-                sec(isec, 1) = (isec - 1) * nda_sec + 1
-                sec(isec, 2) = min(isec * nda_sec, 365)
+                seclist(isec, 1) = (isec - 1) * nda_sec + 1
+                seclist(isec, 2) = min(isec * nda_sec, 365)
             enddo
         endif
-
 
         if (len(trim(fn_out_sfx)) == 0) then
           write(fn_out_sfx, '(A, A)') '_', trim(subreg)
@@ -342,6 +364,10 @@ module control
         ! print*, "Month: ", mnlist
         ! print*, "Day: "  , dalist
         print*, "Days of year: "  , doylist
+
+        print*, "Mean eddy decompsoition : ", ifmeaneddy
+        print*, "Sections : ", seclist(:, 1)
+        print*, "Sections : ", seclist(:, 2)
     endsubroutine
 
     subroutine loadave_vars_sf(cmode, yrlist, doylist)
@@ -418,81 +444,78 @@ module control
         endif
     endsubroutine
 
-    ! subroutine load_mean_sf(fn_zetam)
-    !     use ncio, only : nc_read
-    !     ! use popload, only : load_current_day, find_daily_file
-    !     implicit none
-    !     character(len=*), intent(in) :: fn_zetam
-    !     real(kind=kd_r), dimension(nx, ny, nz, 1) :: WORK
-    !
-    !     print*, '  '
-    !     print*, 'Loading mean field variables from input files'
-    !
-    !     call nc_read(fn_zetam, 'advu'      , WORK); advu         = WORK(:, :, :, 1)
-    !     call nc_read(fn_zetam, 'advv'      , WORK); advv         = WORK(:, :, :, 1)
-    !     call nc_read(fn_zetam, 'advw'      , WORK); advw         = WORK(:, :, :, 1)
-    !     call nc_read(fn_zetam, 'advVx'     , WORK); advVx        = WORK(:, :, :, 1)
-    !     call nc_read(fn_zetam, 'advVy'     , WORK); advVy        = WORK(:, :, :, 1)
-    !     call nc_read(fn_zetam, 'advVz'     , WORK); advVz        = WORK(:, :, :, 1)
-    !     call nc_read(fn_zetam, 'curlmet'   , WORK); curlmet      = WORK(:, :, :, 1)
-    !     call nc_read(fn_zetam, 'errnldcmp' , WORK); err_nldecomp = WORK(:, :, :, 1)
-    !
-    !
-    !     print*, 'advu', advu(xi_dp, yi_dp, zi_dpst:zi_dped)
-    !     print*, 'advv', advv(xi_dp, yi_dp, zi_dpst:zi_dped)
-    !     print*, 'advw', advw(xi_dp, yi_dp, zi_dpst:zi_dped)
-    !     print*, 'advVx', advVx(xi_dp, yi_dp, zi_dpst:zi_dped)
-    !     print*, 'advVy', advVy(xi_dp, yi_dp, zi_dpst:zi_dped)
-    !     print*, 'advVz', advVz(xi_dp, yi_dp, zi_dpst:zi_dped)
-    !     print*, 'err_nldecomp', err_nldecomp(xi_dp, yi_dp, zi_dpst:zi_dped)
-    !     print*, 'Curlmet: ', curlmet(xi_dp, yi_dp, zi_dpst:zi_dped)
-    ! endsubroutine
+    subroutine load_mean_sf(fn_zetam)
+        use ncio, only : nc_read
+        ! use popload, only : load_current_day, find_daily_file
+        implicit none
+        character(len=*), intent(in) :: fn_zetam
+        real(kind=kd_r), dimension(nx, ny, nz, 1) :: WORK
 
-    ! subroutine loadave_zeta_sf(yrlist, doylist)
-    !     use ncio, only : nc_read
-    !     implicit none
-    !
-    !     integer, intent(in) :: yrlist(:), doylist(:)
-    !     character :: fn_zeta*300, yyyymmdd*20
-    !     integer :: iyr, idoy
-    !     integer :: nn, mm, dd
-    !     real(kind=kd_r), dimension(nx, ny, nz, 1) :: WORK
-    !     real(kind=kd_r), dimension(nx, ny, 1 , 1) :: WORK2
-    !
-    !     nn = count(doylist/=0) * count(yrlist/=0)
-    !     print*, '  '
-    !     print*, 'Loading and averaing variables (velocity, mom. terms) from input files over ', nn, ' day(s)'
-    !
-    !     do iyr = 1, count(yrlist/=0)
-    !         do idoy = 1, count(doylist/=0)
-    !             call get_yyyymmdd(yrlist(iyr), doylist(idoy), '', '', fn_zeta_dlm, yyyymmdd)
-    !
-    !             write(fn_zeta, '(A, A, A, A, A)') &
-    !                 trim(fn_in_dir), trim(fn_in_pfx), trim(yyyymmdd), trim(fn_in_sfx), '.nc'
-    !             print*, fn_zeta
-    !
-    !             call nc_read(fn_zeta, 'curlnonl' , WORK); curlnonl      = curlnonl      + WORK(:, :, :, 1) / nn
-    !             call nc_read(fn_zeta, 'betav'    , WORK); betav         = betav         + WORK(:, :, :, 1) / nn
-    !             call nc_read(fn_zeta, 'stretchp' , WORK); stretchp      = stretchp      + WORK(:, :, :, 1) / nn
-    !             call nc_read(fn_zeta, 'errcor'   , WORK); errcor        = errcor        + WORK(:, :, :, 1) / nn
-    !             call nc_read(fn_zeta, 'curlpgrad', WORK); curlpgrad     = curlpgrad     + WORK(:, :, :, 1) / nn
-    !             call nc_read(fn_zeta, 'curlhdiff', WORK); curlhdiff     = curlhdiff     + WORK(:, :, :, 1) / nn
-    !             call nc_read(fn_zeta, 'curlvdiff', WORK); curlvdiff     = curlvdiff     + WORK(:, :, :, 1) / nn
-    !             call nc_read(fn_zeta, 'res'      , WORK); res           = res           + WORK(:, :, :, 1) / nn
-    !             call nc_read(fn_zeta, 'errnlsub' , WORK); err_nlsub     = err_nlsub     + WORK(:, :, :, 1) / nn
-    !
-    !             call nc_read(fn_zeta, 'advu'     , WORK); advuT         = advuT         + WORK(:, :, :, 1) / nn
-    !             call nc_read(fn_zeta, 'advv'     , WORK); advvT         = advvT         + WORK(:, :, :, 1) / nn
-    !             call nc_read(fn_zeta, 'advw'     , WORK); advwT         = advwT         + WORK(:, :, :, 1) / nn
-    !             call nc_read(fn_zeta, 'advVx'    , WORK); advVxT        = advVxT        + WORK(:, :, :, 1) / nn
-    !             call nc_read(fn_zeta, 'advVy'    , WORK); advVyT        = advVyT        + WORK(:, :, :, 1) / nn
-    !             call nc_read(fn_zeta, 'advVz'    , WORK); advVzT        = advVzT        + WORK(:, :, :, 1) / nn
-    !             call nc_read(fn_zeta, 'curlmet'  , WORK); curlmetT      = curlmetT      + WORK(:, :, :, 1) / nn
-    !             call nc_read(fn_zeta, 'errnldcmp', WORK); err_nldecompT = err_nldecompT + WORK(:, :, :, 1) / nn
-    !         enddo
-    !     enddo
-    ! endsubroutine
+        print*, '  '
+        print*, 'Loading mean field variables from input files'
 
+        call nc_read(fn_zetam, 'advu'      , WORK); advu         = WORK(:, :, :, 1)
+        call nc_read(fn_zetam, 'advv'      , WORK); advv         = WORK(:, :, :, 1)
+        call nc_read(fn_zetam, 'advw'      , WORK); advw         = WORK(:, :, :, 1)
+        call nc_read(fn_zetam, 'advVx'     , WORK); advVx        = WORK(:, :, :, 1)
+        call nc_read(fn_zetam, 'advVy'     , WORK); advVy        = WORK(:, :, :, 1)
+        call nc_read(fn_zetam, 'advVz'     , WORK); advVz        = WORK(:, :, :, 1)
+        call nc_read(fn_zetam, 'curlmet'   , WORK); curlmet      = WORK(:, :, :, 1)
+        call nc_read(fn_zetam, 'errnldcmp' , WORK); err_nldecomp = WORK(:, :, :, 1)
+
+        print*, 'advu', advu(xi_dp, yi_dp, zi_dpst:zi_dped)
+        print*, 'advv', advv(xi_dp, yi_dp, zi_dpst:zi_dped)
+        print*, 'advw', advw(xi_dp, yi_dp, zi_dpst:zi_dped)
+        print*, 'advVx', advVx(xi_dp, yi_dp, zi_dpst:zi_dped)
+        print*, 'advVy', advVy(xi_dp, yi_dp, zi_dpst:zi_dped)
+        print*, 'advVz', advVz(xi_dp, yi_dp, zi_dpst:zi_dped)
+        print*, 'err_nldecomp', err_nldecomp(xi_dp, yi_dp, zi_dpst:zi_dped)
+        print*, 'Curlmet: ', curlmet(xi_dp, yi_dp, zi_dpst:zi_dped)
+    endsubroutine
+
+    subroutine loadave_zeta_sf(yrlist, doylist)
+        use ncio, only : nc_read
+        implicit none
+        integer, intent(in) :: yrlist(:), doylist(:)
+        character :: fn_zeta*300, yyyymmdd*20
+        integer :: iyr, idoy
+        integer :: nn, mm, dd
+        real(kind=kd_r), dimension(nx, ny, nz, 1) :: WORK
+        real(kind=kd_r), dimension(nx, ny, 1 , 1) :: WORK2
+
+        nn = count(doylist/=0) * count(yrlist/=0)
+        print*, '  '
+        print*, 'Loading and averaing variables (velocity, mom. terms) from input files over ', nn, ' day(s)'
+
+        do iyr = 1, count(yrlist/=0)
+            do idoy = 1, count(doylist/=0)
+                call get_yyyymmdd(yrlist(iyr), doylist(idoy), '', '', fn_out_dlm, yyyymmdd)
+
+                write(fn_zeta, '(A, A, A, A, A)') &
+                    trim(fn_out_dir), trim(fn_out_pfx), trim(yyyymmdd), trim(fn_out_sfx), '.nc'
+                print*, fn_zeta
+
+                call nc_read(fn_zeta, 'curlnonl' , WORK); curlnonl      = curlnonl      + WORK(:, :, :, 1) / nn
+                call nc_read(fn_zeta, 'betav'    , WORK); betav         = betav         + WORK(:, :, :, 1) / nn
+                call nc_read(fn_zeta, 'stretchp' , WORK); stretchp      = stretchp      + WORK(:, :, :, 1) / nn
+                call nc_read(fn_zeta, 'errcor'   , WORK); err_cor       = err_cor       + WORK(:, :, :, 1) / nn
+                call nc_read(fn_zeta, 'curlpgrad', WORK); curlpgrad     = curlpgrad     + WORK(:, :, :, 1) / nn
+                call nc_read(fn_zeta, 'curlhdiff', WORK); curlhdiff     = curlhdiff     + WORK(:, :, :, 1) / nn
+                call nc_read(fn_zeta, 'curlvdiff', WORK); curlvdiff     = curlvdiff     + WORK(:, :, :, 1) / nn
+                call nc_read(fn_zeta, 'res'      , WORK); res           = res           + WORK(:, :, :, 1) / nn
+                call nc_read(fn_zeta, 'errnlsub' , WORK); err_nlsub     = err_nlsub     + WORK(:, :, :, 1) / nn
+
+                call nc_read(fn_zeta, 'advu'     , WORK); advuT         = advuT         + WORK(:, :, :, 1) / nn
+                call nc_read(fn_zeta, 'advv'     , WORK); advvT         = advvT         + WORK(:, :, :, 1) / nn
+                call nc_read(fn_zeta, 'advw'     , WORK); advwT         = advwT         + WORK(:, :, :, 1) / nn
+                call nc_read(fn_zeta, 'advVx'    , WORK); advVxT        = advVxT        + WORK(:, :, :, 1) / nn
+                call nc_read(fn_zeta, 'advVy'    , WORK); advVyT        = advVyT        + WORK(:, :, :, 1) / nn
+                call nc_read(fn_zeta, 'advVz'    , WORK); advVzT        = advVzT        + WORK(:, :, :, 1) / nn
+                call nc_read(fn_zeta, 'curlmet'  , WORK); curlmetT      = curlmetT      + WORK(:, :, :, 1) / nn
+                call nc_read(fn_zeta, 'errnldcmp', WORK); err_nldecompT = err_nldecompT + WORK(:, :, :, 1) / nn
+            enddo
+        enddo
+    endsubroutine
 
     subroutine get_mmdd(sec, meanfreq, mmdd)
         implicit none
@@ -555,6 +578,280 @@ module control
 
         mm = imn
         dd = idoy - sum(eom(1:mm)) + eom(mm)
+    endsubroutine
+
+    subroutine output_me(fn_me)
+        use netcdf
+        implicit none
+        character(len = *), intent(in) :: fn_me
+        integer :: ncid, stat_create, stat_defdim, stat_defvar, stat_putatt, stat_inqvar, &
+                   stat_getvar, stat_putvar, stat_io
+        integer :: dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time
+        integer :: varid_out_lon, varid_out_lat, varid_out_dep, varid_out_time
+
+        print*, '  '
+        print*, 'Creating output file ', trim(fn_me)
+        print*, '  Start netcdf define ...'
+
+        stat_create = nf90_create(trim(fn_me), cmode=or(nf90_clobber,nf90_64bit_offset), ncid=ncid)
+
+        ! Dimension
+        stat_defdim = nf90_def_dim(ncid, "nlon", nx, dimid_out_lon)
+        stat_defdim = nf90_def_dim(ncid, "nlat", ny, dimid_out_lat)
+        stat_defdim = nf90_def_dim(ncid, "z_t" , nz, dimid_out_dep)
+        stat_defdim = nf90_def_dim(ncid, "time", NF90_UNLIMITED, dimid_out_time)
+
+        ! Coordinates
+        stat_defvar = nf90_def_var(ncid, "TLONG", NF90_FLOAT, &
+           (/dimid_out_lon, dimid_out_lat/), varid_out_lon)
+        stat_defvar = nf90_def_var(ncid, "TLAT",  NF90_FLOAT, &
+           (/dimid_out_lon, dimid_out_lat/), varid_out_lat)
+        stat_defvar = nf90_def_var(ncid, "z_t" ,  NF90_FLOAT, dimid_out_dep , varid_out_dep )
+        stat_defvar = nf90_def_var(ncid, "time" , NF90_FLOAT, dimid_out_time, varid_out_time)
+
+        ! Variables
+        stat_defvar = nf90_def_var(ncid, "curlnonl" , nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_curlnonl )
+        stat_putatt = nf90_put_att(ncid, varid_out_curlnonl , "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_curlnonl , "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_curlnonl , "long_name", "Curl of nonlinear term (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_curlnonl , "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "curlpgrad", nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_curlpgrad)
+        stat_putatt = nf90_put_att(ncid, varid_out_curlpgrad, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_curlpgrad, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_curlpgrad, "long_name", "Curl of pressure gradient term (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_curlpgrad, "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "res"      , nc_xtype, &
+            (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_res)
+        stat_putatt = nf90_put_att(ncid, varid_out_res      , "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_res      , "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_res      , "long_name", "Residual (lhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_res      , "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "curlhdiff", nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_curlhdiff)
+        stat_putatt = nf90_put_att(ncid, varid_out_curlhdiff, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_curlhdiff, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_curlhdiff, "long_name", "Curl of horizontal diffusion (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_curlhdiff, "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "curlvdiff", nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_curlvdiff)
+        stat_putatt = nf90_put_att(ncid, varid_out_curlvdiff, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_curlvdiff, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_curlvdiff, "long_name", "Curl of vertical diffusion (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_curlvdiff, "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "betav"    , nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_betav    )
+        stat_putatt = nf90_put_att(ncid, varid_out_betav    , "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_betav    , "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_betav    , "long_name", "Advection of planetary vorticity term (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_betav    , "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "stretchp",  nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_stretchp  )
+        stat_putatt = nf90_put_att(ncid, varid_out_stretchp , "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_stretchp , "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_stretchp , "long_name", "Planetary vorticity stretching term (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_stretchp , "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "errcor"  ,  nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_errcor    )
+        stat_putatt = nf90_put_att(ncid, varid_out_errcor   , "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_errcor   , "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_errcor   , "long_name", "Error from decomposing curl(-fv, fu) (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_errcor   , "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "errnlsub" , nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_errnlsub)
+        stat_putatt = nf90_put_att(ncid, varid_out_errnlsub, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_errnlsub, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_errnlsub, "long_name", "Error from nonlinear term due to calculating offline (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_errnlsub, "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "advu_m"     , nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advu)
+        stat_putatt = nf90_put_att(ncid, varid_out_advu, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_advu, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_advu, "long_name", "Mean advection of relative vorticity by zonal velocity (flux form) (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_advu, "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "advv_m"     , nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advv)
+        stat_putatt = nf90_put_att(ncid, varid_out_advv, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_advv, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_advv, "long_name", "Mean advection of relative vorticity by meridional velocity (flux form) (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_advv, "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "advw_m"     , nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advw)
+        stat_putatt = nf90_put_att(ncid, varid_out_advw, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_advw, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_advw, "long_name", "Mean advection of relative vorticity by vertical velocity (flux form) (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_advw, "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "advVx_m" , nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advVx)
+        stat_putatt = nf90_put_att(ncid, varid_out_advVx, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_advVx, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_advVx, "long_name", "Mean twisting of zonal voricity by vertical velocity (flux form) (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_advVx, "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "advVy_m"     , nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advVy)
+        stat_putatt = nf90_put_att(ncid, varid_out_advVy, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_advVy, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_advVy, "long_name", "Mean twisting of meridional voricity by vertical velocity (flux form) (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_advVy, "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "advVz_m" , nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advVz)
+        stat_putatt = nf90_put_att(ncid, varid_out_advVz, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_advVz, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_advVz, "long_name", "Mean twisting of vertical voricity by vertical velocity (flux form) (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_advVz, "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "curlmet_m"  , nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_curlmet)
+        stat_putatt = nf90_put_att(ncid, varid_out_curlmet, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_curlmet, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_curlmet, "long_name", "Mean curl of metric term (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_curlmet, "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "errnldcmp_m", nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_errnldcmp)
+        stat_putatt = nf90_put_att(ncid, varid_out_errnldcmp, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_errnldcmp, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_errnldcmp, "long_name", "Mean error from nonlinear term due to decomposition (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_errnldcmp, "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "advu_e"     , nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advue)
+        stat_putatt = nf90_put_att(ncid, varid_out_advue, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_advue, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_advue, "long_name", "Eddy advection of relative vorticity by zonal velocity (flux form) (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_advue, "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "advv_e"     , nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advve)
+        stat_putatt = nf90_put_att(ncid, varid_out_advve, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_advve, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_advve, "long_name", "Eddy advection of relative vorticity by meridional velocity (flux form) (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_advve, "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "advw_e"     , nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advwe)
+        stat_putatt = nf90_put_att(ncid, varid_out_advwe, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_advwe, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_advwe, "long_name", "Eddy advection of relative vorticity by vertical velocity (flux form) (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_advwe, "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "advVx_e" , nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advVxe)
+        stat_putatt = nf90_put_att(ncid, varid_out_advVxe, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_advVxe, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_advVxe, "long_name", "Eddy twisting of zonal voricity by vertical velocity (flux form) (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_advVxe, "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "advVy_e"     , nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advVye)
+        stat_putatt = nf90_put_att(ncid, varid_out_advVye, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_advVye, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_advVye, "long_name", "Eddy twisting of meridional voricity by vertical velocity (flux form) (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_advVye, "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "advVz_e" , nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advVze)
+        stat_putatt = nf90_put_att(ncid, varid_out_advVze, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_advVze, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_advVze, "long_name", "Eddy twisting of vertical voricity by vertical velocity (flux form) (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_advVze, "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "curlmet_e"  , nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_curlmete)
+        stat_putatt = nf90_put_att(ncid, varid_out_curlmete, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_curlmete, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_curlmete, "long_name", "Eddy curl of metric term (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_curlmete, "missing_value", MVALUE)
+
+        stat_defvar = nf90_def_var(ncid, "errnldcmp_e", nc_xtype, &
+          (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_errnldcmpe)
+        stat_putatt = nf90_put_att(ncid, varid_out_errnldcmpe, "Units", "1/s^2")
+        stat_putatt = nf90_put_att(ncid, varid_out_errnldcmpe, "coordinates", "TLONG TLAT z_t time")
+        stat_putatt = nf90_put_att(ncid, varid_out_errnldcmpe, "long_name", "Eddy error from nonlinear term due to decomposition (rhs)")
+        stat_putatt = nf90_put_att(ncid, varid_out_errnldcmpe, "missing_value", MVALUE)
+
+        stat_create = nf90_enddef(ncid)
+        print*, "    Finished netcdf define!", stat_create
+
+        ! Writing cooordinates
+        stat_putvar = nf90_put_var(ncid, varid_out_lat,  tlat , &
+           start = (/1, 1/), count = (/nx, ny/))
+        stat_putvar = nf90_put_var(ncid, varid_out_lon,  tlong, &
+           start = (/1, 1/), count = (/nx, ny/))
+        stat_putvar = nf90_put_var(ncid, varid_out_dep,  z_t)
+
+        print*, '  '
+        print*, '  Start writing zeta eddy mean file ...'
+        stat_putvar = nf90_put_var(ncid, varid_out_curlnonl  , curlnonl      , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_betav     , betav         , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_stretchp  , stretchp      , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_errcor    , err_cor       , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_curlpgrad , curlpgrad     , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_curlhdiff , curlhdiff     , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_curlvdiff , curlvdiff     , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_res       , res           , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_errnlsub  , err_nlsub     , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+
+        stat_putvar = nf90_put_var(ncid, varid_out_advu      , advu          , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_advv      , advv          , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_advw      , advw          , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_advVx     , advVx         , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_advVy     , advVy         , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_advVz     , advVz         , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_curlmet   , curlmet       , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_errnldcmp , err_nldecomp  , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+
+        stat_putvar = nf90_put_var(ncid, varid_out_advue     , advuT  - advu , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_advve     , advvT  - advv , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_advwe     , advwT  - advw , &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_advVxe    , advVxT - advVx, &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_advVye    , advVyT - advVy, &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_advVze    , advVzT - advVz, &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_curlmete  , curlmetT - curlmet, &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        stat_putvar = nf90_put_var(ncid, varid_out_errnldcmpe, err_nldecompT - err_nldecomp, &
+            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+
+        stat_io = nf90_close(ncid)
+        print*, '  Finished writing zeta mean eddy equation file ', stat_io
     endsubroutine
 
     ! subroutine load_vars(iyr, imn, idy)
@@ -674,315 +971,327 @@ module control
 
         ! subroutine create_outputfiles(fn_zeta, ncid_zeta, fn_error, ncid_error)
 
-    ! subroutine create_outputfiles(cmode, fn_zeta, fn_error, ncid_zeta, ncid_error)
-    !     use netcdf
-    !     implicit none
-    !     integer, intent(in) :: cmode
-    !     character(len = *), intent(in) :: fn_zeta, fn_error
-    !     integer, intent(inout) :: ncid_zeta, ncid_error
-    !     integer :: stat_create, stat_defdim, stat_defvar, stat_putatt, stat_inqvar, &
-    !                stat_getvar, stat_putvar, stat_io
-    !     integer :: dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time
-    !     integer :: varid_out_lon, varid_out_lat, varid_out_dep, varid_out_time
-    !
-    !     print*, '  '
-    !     print*, 'Creating output file ', trim(fn_zeta)
-    !     print*, '  Start netcdf define ...'
-    !
-    !     stat_create = nf90_create(trim(fn_zeta), cmode=or(nf90_clobber,nf90_64bit_offset), ncid=ncid_zeta)
-    !
-    !     ! Dimension
-    !     stat_defdim = nf90_def_dim(ncid_zeta, "nlon", nx, dimid_out_lon)
-    !     stat_defdim = nf90_def_dim(ncid_zeta, "nlat", ny, dimid_out_lat)
-    !     stat_defdim = nf90_def_dim(ncid_zeta, "z_t" , nz, dimid_out_dep)
-    !     stat_defdim = nf90_def_dim(ncid_zeta, "time", NF90_UNLIMITED, dimid_out_time)
-    !
-    !     ! Coordinates
-    !     stat_defvar = nf90_def_var(ncid_zeta, "TLONG", NF90_FLOAT, &
-    !        (/dimid_out_lon, dimid_out_lat/), varid_out_lon)
-    !     stat_defvar = nf90_def_var(ncid_zeta, "TLAT",  NF90_FLOAT, &
-    !        (/dimid_out_lon, dimid_out_lat/), varid_out_lat)
-    !     stat_defvar = nf90_def_var(ncid_zeta, "z_t" ,  NF90_FLOAT, dimid_out_dep , varid_out_dep )
-    !     stat_defvar = nf90_def_var(ncid_zeta, "time" , NF90_FLOAT, dimid_out_time, varid_out_time)
-    !
-    !     ! Variables
-    !     if (abs(cmode) == 0 .or. abs(cmode) == 1 .or. abs(cmode) == 2) then
-    !         stat_defvar = nf90_def_var(ncid_zeta, "curlnonl" , nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_curlnonl )
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlnonl , "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlnonl , "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlnonl , "long_name", "Curl of nonlinear term (rhs)")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlnonl , "missing_value", MVALUE)
-    !
-    !         stat_defvar = nf90_def_var(ncid_zeta, "curlpgrad", nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_curlpgrad)
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlpgrad, "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlpgrad, "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlpgrad, "long_name", "Curl of pressure gradient term (rhs)")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlpgrad, "missing_value", MVALUE)
-    !
-    !         stat_defvar = nf90_def_var(ncid_zeta, "res"      , nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_res)
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_res      , "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_res      , "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_res      , "long_name", "Residual (lhs)")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_res      , "missing_value", MVALUE)
-    !
-    !         stat_defvar = nf90_def_var(ncid_zeta, "curlhdiff", nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_curlhdiff)
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlhdiff, "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlhdiff, "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlhdiff, "long_name", "Curl of horizontal diffusion (rhs)")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlhdiff, "missing_value", MVALUE)
-    !
-    !         stat_defvar = nf90_def_var(ncid_zeta, "curlvdiff", nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_curlvdiff)
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlvdiff, "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlvdiff, "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlvdiff, "long_name", "Curl of vertical diffusion (rhs)")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlvdiff, "missing_value", MVALUE)
-    !
-    !         stat_defvar = nf90_def_var(ncid_zeta, "betav"    , nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_betav    )
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_betav    , "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_betav    , "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_betav    , "long_name", "Advection of planetary vorticity term (rhs)")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_betav    , "missing_value", MVALUE)
-    !
-    !         stat_defvar = nf90_def_var(ncid_zeta, "stretchp",  nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_stretchp  )
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_stretchp , "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_stretchp , "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_stretchp , "long_name", "Planetary vorticity stretching term (rhs)")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_stretchp , "missing_value", MVALUE)
-    !
-    !         stat_defvar = nf90_def_var(ncid_zeta, "errcor"  ,  nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_errcor    )
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_errcor   , "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_errcor   , "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_errcor   , "long_name", "Error from decomposing curl(-fv, fu) (rhs)")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_errcor   , "missing_value", MVALUE)
-    !     endif
-    !
-    !     if (abs(cmode) == 1) then
-    !         stat_defvar = nf90_def_var(ncid_zeta, "curlnonl_m"  ,  nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_curlnonlc)
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlnonlc, "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlnonlc, "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlnonlc, "long_name", "Mean curl of nonlinear term offline (rhs)")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlnonlc, "missing_value", MVALUE)
-    !     endif
-    !
-    !     if (abs(cmode == 1) .or. (abs(cmode == 2) .and. yrnm_clm /= "")) then
-    !         stat_defvar = nf90_def_var(ncid_zeta, "curlnonl_e" , nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_errnlsub)
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnlsub, "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnlsub, "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnlsub, "long_name", "Eddy curl of nonlinear term (rhs)")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnlsub, "missing_value", MVALUE)
-    !     endif
-    !
-    !     if (abs(cmode == 2) .and. yrnm_clm == "") then
-    !         stat_defvar = nf90_def_var(ncid_zeta, "errnlsub" , nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_errnlsub)
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnlsub, "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnlsub, "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnlsub, "long_name", "Error from nonlinear term due to calculating offline (rhs)")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnlsub, "missing_value", MVALUE)
-    !     endif
-    !
-    !     if (abs(cmode) == 2 .or. abs(cmode) == 3) then
-    !         stat_defvar = nf90_def_var(ncid_zeta, "advu"     , nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advu)
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advu, "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advu, "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advu, "long_name", "Advection of relative vorticity by zonal velocity (flux form) (rhs)")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advu, "missing_value", MVALUE)
-    !
-    !         stat_defvar = nf90_def_var(ncid_zeta, "advv"     , nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advv)
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advv, "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advv, "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advv, "long_name", "Advection of relative vorticity by meridional velocity (flux form) (rhs)")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advv, "missing_value", MVALUE)
-    !
-    !         stat_defvar = nf90_def_var(ncid_zeta, "advw"     , nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advw)
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advw, "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advw, "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advw, "long_name", "Advection of relative vorticity by vertical velocity (flux form) (rhs)")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advw, "missing_value", MVALUE)
-    !
-    !         stat_defvar = nf90_def_var(ncid_zeta, "advVx" , nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advVx)
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVx, "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVx, "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVx, "long_name", "Twisting of zonal voricity by vertical velocity (flux form) (rhs)")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVx, "missing_value", MVALUE)
-    !
-    !         stat_defvar = nf90_def_var(ncid_zeta, "advVy"     , nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advVy)
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVy, "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVy, "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVy, "long_name", "Twisting of meridional voricity by vertical velocity (flux form) (rhs)")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVy, "missing_value", MVALUE)
-    !
-    !         stat_defvar = nf90_def_var(ncid_zeta, "advVz"     , nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advVz)
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVz, "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVz, "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVz, "long_name", "Twisting of vertical voricity by vertical velocity (flux form) (rhs)")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVz, "missing_value", MVALUE)
-    !
-    !         stat_defvar = nf90_def_var(ncid_zeta, "curlmet"  , nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_curlmet)
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlmet, "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlmet, "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlmet, "long_name", "Curl of metric term (rhs)")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlmet, "missing_value", MVALUE)
-    !
-    !         stat_defvar = nf90_def_var(ncid_zeta, "errnldcmp", nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_errnldcmp)
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnldcmp, "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnldcmp, "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnldcmp, "long_name", "Error from nonlinear term due to decomposition (rhs)")
-    !         stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnldcmp, "missing_value", MVALUE)
-    !     endif
-    !
-    !     stat_create = nf90_enddef(ncid_zeta)
-    !     print*, "    Finished netcdf define!", stat_create
-    !
-    !     ! Writing cooordinates
-    !     stat_putvar = nf90_put_var(ncid_zeta, varid_out_lat,  tlat , &
-    !        start = (/1, 1/), count = (/nx, ny/))
-    !     stat_putvar = nf90_put_var(ncid_zeta, varid_out_lon,  tlong, &
-    !        start = (/1, 1/), count = (/nx, ny/))
-    !     stat_putvar = nf90_put_var(ncid_zeta, varid_out_dep,  z_t)
-    !
-    !     if (cmode < 0) then
-    !         print*, '  '
-    !         print*, 'Creating output error file ', trim(fn_error)
-    !
-    !         stat_create = nf90_create(trim(fn_error), cmode=or(nf90_clobber,nf90_64bit_offset), ncid=ncid_error)
-    !
-    !         stat_defdim = nf90_def_dim(ncid_error, "nlon", nx, dimid_out_lon)
-    !         stat_defdim = nf90_def_dim(ncid_error, "nlat", ny, dimid_out_lat)
-    !         stat_defdim = nf90_def_dim(ncid_error, "z_t" , nz, dimid_out_dep)
-    !         stat_defdim = nf90_def_dim(ncid_error, "time", NF90_UNLIMITED, dimid_out_time)
-    !
-    !         stat_defvar = nf90_def_var(ncid_error, "TLONG", NF90_FLOAT, &
-    !            (/dimid_out_lon, dimid_out_lat/), varid_out_lon)
-    !         stat_defvar = nf90_def_var(ncid_error, "TLAT",  NF90_FLOAT, &
-    !            (/dimid_out_lon, dimid_out_lat/), varid_out_lat)
-    !         stat_defvar = nf90_def_var(ncid_error, "z_t" ,  NF90_FLOAT, dimid_out_dep , varid_out_dep )
-    !         stat_defvar = nf90_def_var(ncid_error, "time" , NF90_FLOAT, dimid_out_time, varid_out_time)
-    !
-    !         stat_defvar = nf90_def_var(ncid_error, "rr_rev",   nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_errnl_rev)
-    !         stat_putatt = nf90_put_att(ncid_error, varid_out_errnl_rev, "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_error, varid_out_errnl_rev, "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_error, varid_out_errnl_rev, "missing_value", MVALUE)
-    !
-    !         stat_defvar = nf90_def_var(ncid_error, "rr_cha",   nc_xtype, &
-    !           (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_errnl_cha)
-    !         stat_putatt = nf90_put_att(ncid_error, varid_out_errnl_cha, "Units", "1/s^2")
-    !         stat_putatt = nf90_put_att(ncid_error, varid_out_errnl_cha, "coordinates", "TLONG TLAT z_t time")
-    !         stat_putatt = nf90_put_att(ncid_error, varid_out_errnl_cha, "missing_value", MVALUE)
-    !
-    !         stat_create = nf90_enddef(ncid_error)
-    !         print*, "    Finished netcdf define!", stat_create
-    !
-    !         stat_putvar = nf90_put_var(ncid_error, varid_out_lat,  tlat , &
-    !            start = (/1, 1/), count = (/nx, ny/))
-    !         stat_putvar = nf90_put_var(ncid_error, varid_out_lon,  tlong, &
-    !            start = (/1, 1/), count = (/nx, ny/))
-    !         stat_putvar = nf90_put_var(ncid_error, varid_out_dep,  z_t)
-    !     else
-    !         ncid_error = 0
-    !     endif
-    ! endsubroutine
-    !
-    ! subroutine write_outputfiles(cmode, ncid_zeta, ncid_error)
-    !     use netcdf
-    !     implicit none
-    !     integer, intent(in) :: cmode, ncid_zeta, ncid_error
-    !     integer :: stat_putvar
-    !
-    !     print*, '  '
-    !     print*, '  Start writing zeta equation file ...'
-    !
-    !     if (abs(cmode) == 0 .or. abs(cmode) == 1 .or. abs(cmode) == 2) then
-    !         stat_putvar = nf90_put_var(ncid_zeta, varid_out_curlnonl , curlnonl , &
-    !             start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !         stat_putvar = nf90_put_var(ncid_zeta, varid_out_betav    , betav    , &
-    !             start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !         stat_putvar = nf90_put_var(ncid_zeta, varid_out_stretchp , stretchp , &
-    !             start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !         stat_putvar = nf90_put_var(ncid_zeta, varid_out_errcor   , err_cor  , &
-    !             start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !         stat_putvar = nf90_put_var(ncid_zeta, varid_out_curlpgrad, curlpgrad, &
-    !             start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !         stat_putvar = nf90_put_var(ncid_zeta, varid_out_curlhdiff, curlhdiff, &
-    !             start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !         stat_putvar = nf90_put_var(ncid_zeta, varid_out_curlvdiff, curlvdiff, &
-    !             start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !         stat_putvar = nf90_put_var(ncid_zeta, varid_out_res      , res      , &
-    !             start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !     endif
-    !
-    !     if (abs(cmode) == 1) then
-    !         stat_putvar = nf90_put_var(ncid_zeta, varid_out_curlnonlc , curladv + curlmet , &
-    !             start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !     endif
-    !
-    !     if (abs(cmode == 1) .or. abs(cmode == 2)) then
-    !         stat_putvar = nf90_put_var(ncid_zeta, varid_out_errnlsub , err_nlsub   , &
-    !             start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !     endif
-    !
-    !     if (abs(cmode) == 2 .or. abs(cmode) == 3) then
-    !         stat_putvar = nf90_put_var(ncid_zeta, varid_out_advu     , advu        , &
-    !             start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !         stat_putvar = nf90_put_var(ncid_zeta, varid_out_advv     , advv        , &
-    !             start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !         stat_putvar = nf90_put_var(ncid_zeta, varid_out_advw     , advw        , &
-    !             start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !         stat_putvar = nf90_put_var(ncid_zeta, varid_out_advVx    , advVx       , &
-    !             start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !         stat_putvar = nf90_put_var(ncid_zeta, varid_out_advVy    , advVy       , &
-    !             start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !         stat_putvar = nf90_put_var(ncid_zeta, varid_out_advVz    , advVz       , &
-    !             start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !         stat_putvar = nf90_put_var(ncid_zeta, varid_out_curlmet  , curlmet     , &
-    !             start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !         stat_putvar = nf90_put_var(ncid_zeta, varid_out_errnldcmp, err_nldecomp, &
-    !             start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !     endif
-    !     print*, '  Finished writing zeta equation file '
-    !
-    !     if (cmode < 0) then
-    !         print*, '  '
-    !         print*, '  Start writing error file ...'
-    !
-    !         stat_putvar = nf90_put_var(ncid_error, varid_out_errnl_rev, rr_rev, &
-    !            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !         stat_putvar = nf90_put_var(ncid_error, varid_out_errnl_cha, rr_cha, &
-    !            start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
-    !         print*, '  Finished writing error file '
-    !     endif
-    ! endsubroutine
-    !
-    ! subroutine close_outputfiles(cmode, ncid_zeta, ncid_error)
-    !     use netcdf
-    !     implicit none
-    !     integer, intent(in) :: cmode, ncid_zeta, ncid_error
-    !     integer :: stat_io
-    !
-    !     print*, '  '
-    !     print*, 'Closing output files ...'
-    !     stat_io = nf90_close(ncid_zeta)
-    !     if (cmode < 0) then
-    !       stat_io = nf90_close(ncid_error)
-    !     endif
-    ! endsubroutine
+    subroutine create_outputfiles(cmode, fn_zeta, fn_error, ncid_zeta, ncid_error)
+        use netcdf
+        implicit none
+        integer, intent(in) :: cmode
+        character(len = *), intent(in) :: fn_zeta, fn_error
+        integer, intent(inout) :: ncid_zeta, ncid_error
+        integer :: stat_create, stat_defdim, stat_defvar, stat_putatt, stat_inqvar, &
+                   stat_getvar, stat_putvar, stat_io
+        integer :: dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time
+        integer :: varid_out_lon, varid_out_lat, varid_out_dep, varid_out_time
+
+        print*, '  '
+        print*, 'Creating output file ', trim(fn_zeta)
+        print*, '  Start netcdf define ...'
+
+        stat_create = nf90_create(trim(fn_zeta), cmode=or(nf90_clobber,nf90_64bit_offset), ncid=ncid_zeta)
+
+        ! Dimension
+        stat_defdim = nf90_def_dim(ncid_zeta, "nlon", nx, dimid_out_lon)
+        stat_defdim = nf90_def_dim(ncid_zeta, "nlat", ny, dimid_out_lat)
+        stat_defdim = nf90_def_dim(ncid_zeta, "z_t" , nz, dimid_out_dep)
+        stat_defdim = nf90_def_dim(ncid_zeta, "time", NF90_UNLIMITED, dimid_out_time)
+
+        ! Coordinates
+        stat_defvar = nf90_def_var(ncid_zeta, "TLONG", NF90_FLOAT, &
+           (/dimid_out_lon, dimid_out_lat/), varid_out_lon)
+        stat_defvar = nf90_def_var(ncid_zeta, "TLAT",  NF90_FLOAT, &
+           (/dimid_out_lon, dimid_out_lat/), varid_out_lat)
+        stat_defvar = nf90_def_var(ncid_zeta, "z_t" ,  NF90_FLOAT, dimid_out_dep , varid_out_dep )
+        stat_defvar = nf90_def_var(ncid_zeta, "time" , NF90_FLOAT, dimid_out_time, varid_out_time)
+
+        ! Variables
+        if (abs(cmode) == 0 .or. abs(cmode) == 1 .or. abs(cmode) == 2) then
+            stat_defvar = nf90_def_var(ncid_zeta, "curlnonl" , nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_curlnonl )
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlnonl , "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlnonl , "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlnonl , "long_name", "Curl of nonlinear term (rhs)")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlnonl , "missing_value", MVALUE)
+
+            stat_defvar = nf90_def_var(ncid_zeta, "curlpgrad", nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_curlpgrad)
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlpgrad, "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlpgrad, "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlpgrad, "long_name", "Curl of pressure gradient term (rhs)")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlpgrad, "missing_value", MVALUE)
+
+            stat_defvar = nf90_def_var(ncid_zeta, "res"      , nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_res)
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_res      , "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_res      , "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_res      , "long_name", "Residual (lhs)")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_res      , "missing_value", MVALUE)
+
+            stat_defvar = nf90_def_var(ncid_zeta, "curlhdiff", nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_curlhdiff)
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlhdiff, "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlhdiff, "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlhdiff, "long_name", "Curl of horizontal diffusion (rhs)")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlhdiff, "missing_value", MVALUE)
+
+            stat_defvar = nf90_def_var(ncid_zeta, "curlvdiff", nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_curlvdiff)
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlvdiff, "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlvdiff, "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlvdiff, "long_name", "Curl of vertical diffusion (rhs)")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlvdiff, "missing_value", MVALUE)
+
+            stat_defvar = nf90_def_var(ncid_zeta, "betav"    , nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_betav    )
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_betav    , "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_betav    , "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_betav    , "long_name", "Advection of planetary vorticity term (rhs)")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_betav    , "missing_value", MVALUE)
+
+            stat_defvar = nf90_def_var(ncid_zeta, "stretchp",  nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_stretchp  )
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_stretchp , "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_stretchp , "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_stretchp , "long_name", "Planetary vorticity stretching term (rhs)")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_stretchp , "missing_value", MVALUE)
+
+            stat_defvar = nf90_def_var(ncid_zeta, "errcor"  ,  nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_errcor    )
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_errcor   , "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_errcor   , "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_errcor   , "long_name", "Error from decomposing curl(-fv, fu) (rhs)")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_errcor   , "missing_value", MVALUE)
+        endif
+
+        if (abs(cmode) == 1) then
+            stat_defvar = nf90_def_var(ncid_zeta, "curlnonl_m"  ,  nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_curlnonlc)
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlnonlc, "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlnonlc, "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlnonlc, "long_name", "Mean curl of nonlinear term offline (rhs)")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlnonlc, "missing_value", MVALUE)
+        endif
+
+        if (abs(cmode == 1) .or. (abs(cmode == 2) .and. yrnm_clm /= "")) then
+            stat_defvar = nf90_def_var(ncid_zeta, "curlnonl_e" , nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_errnlsub)
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnlsub, "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnlsub, "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnlsub, "long_name", "Eddy curl of nonlinear term (rhs)")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnlsub, "missing_value", MVALUE)
+        endif
+
+        if (abs(cmode == 2) .and. yrnm_clm == "") then
+            stat_defvar = nf90_def_var(ncid_zeta, "errnlsub" , nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_errnlsub)
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnlsub, "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnlsub, "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnlsub, "long_name", "Error from nonlinear term due to calculating offline (rhs)")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnlsub, "missing_value", MVALUE)
+        endif
+
+        if (abs(cmode) == 2 .or. abs(cmode) == 3) then
+            stat_defvar = nf90_def_var(ncid_zeta, "advu"     , nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advu)
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advu, "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advu, "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advu, "long_name", "Advection of relative vorticity by zonal velocity (flux form) (rhs)")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advu, "missing_value", MVALUE)
+
+            stat_defvar = nf90_def_var(ncid_zeta, "advv"     , nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advv)
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advv, "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advv, "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advv, "long_name", "Advection of relative vorticity by meridional velocity (flux form) (rhs)")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advv, "missing_value", MVALUE)
+
+            stat_defvar = nf90_def_var(ncid_zeta, "advw"     , nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advw)
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advw, "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advw, "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advw, "long_name", "Advection of relative vorticity by vertical velocity (flux form) (rhs)")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advw, "missing_value", MVALUE)
+
+            stat_defvar = nf90_def_var(ncid_zeta, "advVx" , nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advVx)
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVx, "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVx, "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVx, "long_name", "Twisting of zonal voricity by vertical velocity (flux form) (rhs)")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVx, "missing_value", MVALUE)
+
+            stat_defvar = nf90_def_var(ncid_zeta, "advVy"     , nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advVy)
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVy, "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVy, "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVy, "long_name", "Twisting of meridional voricity by vertical velocity (flux form) (rhs)")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVy, "missing_value", MVALUE)
+
+            stat_defvar = nf90_def_var(ncid_zeta, "advVz"     , nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_advVz)
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVz, "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVz, "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVz, "long_name", "Twisting of vertical voricity by vertical velocity (flux form) (rhs)")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_advVz, "missing_value", MVALUE)
+
+            stat_defvar = nf90_def_var(ncid_zeta, "curlmet"  , nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_curlmet)
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlmet, "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlmet, "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlmet, "long_name", "Curl of metric term (rhs)")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_curlmet, "missing_value", MVALUE)
+
+            stat_defvar = nf90_def_var(ncid_zeta, "errnldcmp", nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_errnldcmp)
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnldcmp, "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnldcmp, "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnldcmp, "long_name", "Error from nonlinear term due to decomposition (rhs)")
+            stat_putatt = nf90_put_att(ncid_zeta, varid_out_errnldcmp, "missing_value", MVALUE)
+        endif
+
+        stat_create = nf90_enddef(ncid_zeta)
+        print*, "    Finished netcdf define!", stat_create
+
+        ! Writing cooordinates
+        stat_putvar = nf90_put_var(ncid_zeta, varid_out_lat,  tlat , &
+           start = (/1, 1/), count = (/nx, ny/))
+        stat_putvar = nf90_put_var(ncid_zeta, varid_out_lon,  tlong, &
+           start = (/1, 1/), count = (/nx, ny/))
+        stat_putvar = nf90_put_var(ncid_zeta, varid_out_dep,  z_t)
+
+        if (cmode < 0) then
+            print*, '  '
+            print*, 'Creating output error file ', trim(fn_error)
+
+            stat_create = nf90_create(trim(fn_error), cmode=or(nf90_clobber,nf90_64bit_offset), ncid=ncid_error)
+
+            stat_defdim = nf90_def_dim(ncid_error, "nlon", nx, dimid_out_lon)
+            stat_defdim = nf90_def_dim(ncid_error, "nlat", ny, dimid_out_lat)
+            stat_defdim = nf90_def_dim(ncid_error, "z_t" , nz, dimid_out_dep)
+            stat_defdim = nf90_def_dim(ncid_error, "time", NF90_UNLIMITED, dimid_out_time)
+
+            stat_defvar = nf90_def_var(ncid_error, "TLONG", NF90_FLOAT, &
+               (/dimid_out_lon, dimid_out_lat/), varid_out_lon)
+            stat_defvar = nf90_def_var(ncid_error, "TLAT",  NF90_FLOAT, &
+               (/dimid_out_lon, dimid_out_lat/), varid_out_lat)
+            stat_defvar = nf90_def_var(ncid_error, "z_t" ,  NF90_FLOAT, dimid_out_dep , varid_out_dep )
+            stat_defvar = nf90_def_var(ncid_error, "time" , NF90_FLOAT, dimid_out_time, varid_out_time)
+
+            stat_defvar = nf90_def_var(ncid_error, "rr_rev",   nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_errnl_rev)
+            stat_putatt = nf90_put_att(ncid_error, varid_out_errnl_rev, "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_error, varid_out_errnl_rev, "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_error, varid_out_errnl_rev, "missing_value", MVALUE)
+
+            stat_defvar = nf90_def_var(ncid_error, "rr_cha",   nc_xtype, &
+              (/dimid_out_lon, dimid_out_lat, dimid_out_dep, dimid_out_time/), varid_out_errnl_cha)
+            stat_putatt = nf90_put_att(ncid_error, varid_out_errnl_cha, "Units", "1/s^2")
+            stat_putatt = nf90_put_att(ncid_error, varid_out_errnl_cha, "coordinates", "TLONG TLAT z_t time")
+            stat_putatt = nf90_put_att(ncid_error, varid_out_errnl_cha, "missing_value", MVALUE)
+
+            stat_create = nf90_enddef(ncid_error)
+            print*, "    Finished netcdf define!", stat_create
+
+            stat_putvar = nf90_put_var(ncid_error, varid_out_lat,  tlat , &
+               start = (/1, 1/), count = (/nx, ny/))
+            stat_putvar = nf90_put_var(ncid_error, varid_out_lon,  tlong, &
+               start = (/1, 1/), count = (/nx, ny/))
+            stat_putvar = nf90_put_var(ncid_error, varid_out_dep,  z_t)
+        else
+            ncid_error = 0
+        endif
+    endsubroutine
+
+    subroutine write_outputfiles(cmode, ncid_zeta, ncid_error)
+        use netcdf
+        implicit none
+        integer, intent(in) :: cmode, ncid_zeta, ncid_error
+        integer :: stat_putvar
+
+        print*, '  '
+        print*, '  Start writing zeta equation file ...'
+
+        if (abs(cmode) == 0 .or. abs(cmode) == 1 .or. abs(cmode) == 2) then
+            stat_putvar = nf90_put_var(ncid_zeta, varid_out_curlnonl , curlnonl , &
+                start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+            stat_putvar = nf90_put_var(ncid_zeta, varid_out_betav    , betav    , &
+                start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+            stat_putvar = nf90_put_var(ncid_zeta, varid_out_stretchp , stretchp , &
+                start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+            stat_putvar = nf90_put_var(ncid_zeta, varid_out_errcor   , err_cor  , &
+                start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+            stat_putvar = nf90_put_var(ncid_zeta, varid_out_curlpgrad, curlpgrad, &
+                start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+            stat_putvar = nf90_put_var(ncid_zeta, varid_out_curlhdiff, curlhdiff, &
+                start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+            stat_putvar = nf90_put_var(ncid_zeta, varid_out_curlvdiff, curlvdiff, &
+                start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+            stat_putvar = nf90_put_var(ncid_zeta, varid_out_res      , res      , &
+                start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        endif
+
+        if (abs(cmode) == 1) then
+            stat_putvar = nf90_put_var(ncid_zeta, varid_out_curlnonlc , curladv + curlmet , &
+                start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        endif
+
+        if (abs(cmode == 1) .or. abs(cmode == 2)) then
+            stat_putvar = nf90_put_var(ncid_zeta, varid_out_errnlsub , err_nlsub   , &
+                start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        endif
+
+        if (abs(cmode) == 2 .or. abs(cmode) == 3) then
+            stat_putvar = nf90_put_var(ncid_zeta, varid_out_advu     , advu        , &
+                start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+            stat_putvar = nf90_put_var(ncid_zeta, varid_out_advv     , advv        , &
+                start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+            stat_putvar = nf90_put_var(ncid_zeta, varid_out_advw     , advw        , &
+                start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+            stat_putvar = nf90_put_var(ncid_zeta, varid_out_advVx    , advVx       , &
+                start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+            stat_putvar = nf90_put_var(ncid_zeta, varid_out_advVy    , advVy       , &
+                start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+            stat_putvar = nf90_put_var(ncid_zeta, varid_out_advVz    , advVz       , &
+                start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+            stat_putvar = nf90_put_var(ncid_zeta, varid_out_curlmet  , curlmet     , &
+                start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+            stat_putvar = nf90_put_var(ncid_zeta, varid_out_errnldcmp, err_nldecomp, &
+                start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+        endif
+        print*, '  Finished writing zeta equation file '
+
+        if (cmode < 0) then
+            print*, '  '
+            print*, '  Start writing error file ...'
+
+            stat_putvar = nf90_put_var(ncid_error, varid_out_errnl_rev, rr_rev, &
+               start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+            stat_putvar = nf90_put_var(ncid_error, varid_out_errnl_cha, rr_cha, &
+               start = (/1, 1, 1, 1/), count = (/nx, ny, nz, 1/))
+            print*, '  Finished writing error file '
+        endif
+    endsubroutine
+
+    subroutine close_outputfiles(cmode, ncid_zeta, ncid_error)
+        use netcdf
+        implicit none
+        integer, intent(in) :: cmode, ncid_zeta, ncid_error
+        integer :: stat_io
+
+        print*, '  '
+        print*, 'Closing output files ...'
+        stat_io = nf90_close(ncid_zeta)
+        if (cmode < 0) then
+          stat_io = nf90_close(ncid_error)
+        endif
+    endsubroutine
+
+    subroutine init_meaneddy_vars()
+        deallocate(curladv, curlmet)
+
+        call init_zetavars_output(1)
+        allocate(advuT(nx, ny, nz), advvT(nx, ny, nz), advwT(nx, ny, nz), &
+            advVxT(nx, ny, nz), advVyT(nx, ny, nz), advVzT(nx, ny, nz), &
+            curlmetT(nx, ny, nz), err_nldecompT(nx, ny, nz))
+        advuT = 0. ; advvT = 0.; advwT = 0.
+        advVxT = 0.; advVyT = 0.; advVzT = 0.
+        curlmetT = 0.; err_nldecompT = 0.
+    endsubroutine
 endmodule
