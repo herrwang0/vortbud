@@ -1,9 +1,11 @@
-module control
+module io
     use params
     use zeta, only : uc, vc, wc, ssh, advx, advy, gradx, grady, hdiffx, hdiffy, vdiffx, vdiffy, &
+                     ueu, uev, vnu, vnv, wtu, wtv, &
+                     tlat, tlong, z_t, &
                      curlnonl, betav, stretchp, err_cor, curlpgrad, curlhdiff, curlvdiff, res, &
                      curladv, curlmet, err_nlsub, advu, advv, advw, advVx, advVy, advVz, err_nldecomp, &
-                     rr_rev, rr_cha, tlat, tlong, z_t, init_zetavars_output
+                     rr_rev, rr_cha, curladvf
     implicit none
     private
     ! public :: load_params, loadave_vars_sf, get_mmdd, get_yyyymmdd, create_outputfiles, write_outputfiles, close_outputfiles
@@ -52,10 +54,6 @@ module control
     endtype
 
     !!--------------------------------------------------------------------------
-    ! * Input namelist file name *
-    character(len = *), parameter, public :: fn_namelist = 'input.nml'
-
-    !!--------------------------------------------------------------------------
     ! * Calculation mode *
     logical, public :: ifcurl, ifdecomp, ifdecompdebug = .False.
     logical, public :: ifmeaneddy, ifmeanclm, ifdecomposed = .True.
@@ -68,6 +66,8 @@ module control
     real(kind=kd_r), dimension(:, :, :), allocatable, public :: &
         advu_m, advv_m, advw_m, advVx_m, advVy_m, advVz_m, curlmet_m, err_nldecomp_m, curlnonl_m
     !!----------------------------------------------------------------------------
+
+    character(len = 100) :: fmts_vel, fmtm_vel, fmts_mom, fmtm_mom, fmts_flx, fmtm_flx
 
     contains
     subroutine load_params(cmode, cmode_m)
@@ -104,6 +104,10 @@ module control
         ! list of days in year
         integer :: doylist_full(365) = 0
 
+        character(len=9) :: yrnm_clm = ""
+        ! Month+Day part of the input climatology file.
+        character(len=9) :: avnm_clm = ""
+
         !!--------------------------------------------------------------------------
         ! * Mean field frequency *
         ! Date format
@@ -116,11 +120,6 @@ module control
         integer, dimension(365) :: seclist_in_st = 0, seclist_in_ed = 0
         integer :: secst = 0, seced = 0
         integer :: nda_sec = 365
-
-                character(len=9) :: yrnm_clm = ""
-                ! Month+Day part of the input climatology file.
-                character(len=9) :: avnm_clm = ""
-
 
         !!--------------------------------------------------------------------------
         ! * Input file info *
@@ -154,13 +153,14 @@ module control
 
         namelist /calcmode/ ifcurl, ifdecomp, ifdecompdebug
         namelist /mecmode/ ifmeaneddy, ifmeanclm, ifdecomposed, meanfreq, nda_sec, seclist_in_st, seclist_in_ed, secst, seced
-        namelist /bnds/ yrst, yred, mnst, mned, dast, daed, &
+        namelist /time/ yrst, yred, mnst, mned, dast, daed, &
                         yrnm_clm, avnm_clm, yrlist_in, mnlist_in, dalist_in
-        namelist /grid/ G
-        namelist /input/ fn_mom_dir, fn_mom_pfx, fn_mom_sfx, fn_mom_dlm
-        namelist /output/ fn_vor_dir , fn_vor_pfx , fn_vor_sfx , fn_vor_dlm , &
-                          fn_vorm_dir, fn_vorm_pfx, fn_vorm_sfx, fn_vorm_dlm, &
-                          fn_vore_dir, fn_vore_pfx, fn_vore_sfx, fn_vore_dlm
+        namelist /bnds/ B
+        namelist /grid_files/ fngrid
+        namelist /input_files/ fn_mom_dir, fn_mom_pfx, fn_mom_sfx, fn_mom_dlm
+        namelist /output_files/ fn_vor_dir , fn_vor_pfx , fn_vor_sfx , fn_vor_dlm , &
+                                fn_vorm_dir, fn_vorm_pfx, fn_vorm_sfx, fn_vorm_dlm, &
+                                fn_vore_dir, fn_vore_pfx, fn_vore_sfx, fn_vore_dlm
 
         write(*, '(A)') '-----------------------------------------------------'
         open(101, file=fn_namelist, status="old", iostat=nml_error)
@@ -168,13 +168,15 @@ module control
           write(*, '(A30, I)') "input <calcmode>: ", nml_error
         read(101, nml=mecmode, iostat=nml_error)
           write(*, '(A30, I)') "input <mecmode>: ", nml_error
+        read(101, nml=time, iostat=nml_error)
+          write(*, '(A30, I)') "input <time>: ", nml_error
         read(101, nml=bnds, iostat=nml_error)
           write(*, '(A30, I)') "input <bnds>: ", nml_error
-        read(101, nml=grid, iostat=nml_error)
+        read(101, nml=grid_files, iostat=nml_error)
           write(*, '(A30, I)') "input <grid>: ", nml_error
-        read(101, nml=input, iostat=nml_error)
+        read(101, nml=input_files, iostat=nml_error)
           write(*, '(A30, I)') "input <input>: ", nml_error
-        read(101, nml=output, iostat=nml_error)
+        read(101, nml=output_files, iostat=nml_error)
           write(*, '(A30, I)') "input <output>: ", nml_error
         close(101)
         write(*, *)
@@ -301,14 +303,14 @@ module control
         !-------------------------------------------
         ! * Relative domain boundaries *
         !-------------------------------------------
-        G%xl = G%xl_reg - G%xl_ref + 1
-        G%xr = G%xr_reg - G%xl_ref + 1
-        G%yd = G%yd_reg - G%yd_ref + 1
-        G%yu = G%yu_reg - G%yd_ref + 1
+        B%xl = B%xl_reg - B%xl_ref + 1
+        B%xr = B%xr_reg - B%xl_ref + 1
+        B%yd = B%yd_reg - B%yd_ref + 1
+        B%yu = B%yu_reg - B%yd_ref + 1
 
-        G%nx = G%xr - G%xl + 1
-        G%ny = G%yu - G%yd + 1
-        G%nz = nzgl
+        B%nx = B%xr - B%xl + 1
+        B%ny = B%yu - B%yd + 1
+        B%nz = nzgl
 
         !-------------------------------------------
         ! * Interpreting date for the main loop *
@@ -456,7 +458,7 @@ module control
         T%avnm_clm = avnm_clm
 
         if (len(trim(fn_vor_sfx)) == 0) then
-          write(fn_vor_sfx, '(A, A)') '_', trim(G%subreg)
+            write(fn_vor_sfx, '(A, A)') '_', trim(B%subreg)
         endif
 
         write(fn_vorm_sfx, '(A, A)') trim(fn_vor_sfx), trim(fn_vorm_sfx)
@@ -471,32 +473,32 @@ module control
         !     write(fn_vore_sfx, '(A, A)') trim(fn_vore_sfx), '_decomp'
         ! endif
 
-       if (len(trim(fn_vor_dlm)) == 0) then
-          write(fn_vor_dlm, '(A)') trim(fn_mom_dlm)
+        if (len(trim(fn_vor_dlm)) == 0) then
+            write(fn_vor_dlm, '(A)') trim(fn_mom_dlm)
         endif
 
         if (len(trim(fn_vorm_dlm)) == 0) then
-          write(fn_vorm_dlm, '(A)') trim(fn_mom_dlm)
+            write(fn_vorm_dlm, '(A)') trim(fn_mom_dlm)
         endif
 
         if (len(trim(fn_vore_dlm)) == 0) then
-          write(fn_vore_dlm, '(A)') trim(fn_mom_dlm)
+            write(fn_vore_dlm, '(A)') trim(fn_mom_dlm)
         endif
 
         if (len(trim(fn_vorm_dir)) == 0) then
-          write(fn_vorm_dir, '(A)') trim(fn_vor_dir)
+            write(fn_vorm_dir, '(A)') trim(fn_vor_dir)
         endif
 
         if (len(trim(fn_vore_dir)) == 0) then
-          write(fn_vore_dir, '(A)') trim(fn_vor_dir)
+            write(fn_vore_dir, '(A)') trim(fn_vor_dir)
         endif
 
         if (len(trim(fn_vorm_pfx)) == 0) then
-          write(fn_vorm_pfx, '(A)') trim(fn_vor_pfx)
+            write(fn_vorm_pfx, '(A)') trim(fn_vor_pfx)
         endif
 
         if (len(trim(fn_vore_pfx)) == 0) then
-          write(fn_vore_pfx, '(A)') trim(fn_vor_pfx)
+            write(fn_vore_pfx, '(A)') trim(fn_vor_pfx)
         endif
 
         fn_mom%dir = fn_mom_dir
@@ -523,8 +525,9 @@ module control
         ! * Print basic info *
         !-------------------------------------------
         write(*, '(A)') '-----------------------------------------------------'
-        write(*, '(A, A)') "Domain name: ", trim(G%subreg)
-        write(*, '(A, I3, A, I3)') "Domain size (Nx x Ny): ", G%nx, " x ", G%ny
+        write(*, '(A, A)') "Domain name: ", trim(B%subreg)
+        write(*, '(A, I3, A, I3)') "xl: ", B%xl, " yd ", B%yd
+        write(*, '(A, I3, A, I3)') "Domain size (Nx x Ny): ", B%nx, " x ", B%ny
         write(*, *)
 
         write(*, '(A)') '-----------------------------------------------------'
@@ -554,6 +557,13 @@ module control
             write(*, '(A, I3, A, I3)') "    ", T%tlist(ida, 1), ' ', T%tlist(ida, 2)
         enddo
         write(*, *)
+
+        write(fmts_mom, '(A, A, A)' ) '(A20, ', trim(fmt_exp), ')'
+        write(fmtm_mom, '(A, I2, A, A)') '(A20, ', B%zi_dped - B%zi_dpst + 1, trim(fmt_exp), ')'
+        write(fmts_flx, '(A, A, A)' ) '(A20, ', trim(fmt_exp), ')'
+        write(fmtm_flx, '(A, I2, A, A)') '(A20, ', B%zi_dped - B%zi_dpst + 1, trim(fmt_exp), ')'
+        write(fmts_vel, '(A, A, A)' ) '(A20, ', trim(fmt_flt), ')'
+        write(fmtm_vel, '(A, I2, A, A)') '(A20, ', B%zi_dped - B%zi_dpst + 1, trim(fmt_flt), ')'
     endsubroutine
 
     ! Load and average momentum terms from single files
@@ -567,46 +577,59 @@ module control
         character :: fn_mom*300, yyyymmdd*20
         integer :: iyr, idoy
         integer :: nn, mm, dd
-        real(kind=kd_r), dimension(G%nx, G%ny, G%nz, 1) :: WORK
-        real(kind=kd_r), dimension(G%nx, G%ny, 1 , 1) :: WORK2
+        real(kind=kd_r), dimension(B%nx, B%ny, B%nz, 1) :: WORK
+        real(kind=kd_r), dimension(B%nx, B%ny, 1 , 1) :: WORK2
 
         ! nn = count(doylist/=0) * count(yrlist/=0)
         nn = size(doylist) * size(yrlist)
-        print*, '  '
-        print*, 'Loading and averaing variables (velocity, mom. terms) from input files over ', nn, ' day(s)'
+
+        write(*, *)
+        write(*, '(A)') '-----------------------------------------------------'
+        write(*, '(A, I3, A)') 'Loading and averaing variables (velocity, mom. terms) from input files over ', nn, ' day(s)'
 
         do iyr = 1, size(yrlist)
             do idoy = 1, size(doylist)
                 call get_yyyymmdd(yrlist(iyr), doylist(idoy),  yrnm_clm, avnm_clm, fn%dlm, yyyymmdd)
-
                 write(fn_mom, '(A, A, A, A, A)') &
                     trim(fn%dir), trim(fn%pfx), trim(yyyymmdd), trim(fn%sfx), '.nc'
 
-                print*, fn_mom
+                write(*, '(A, A)') '  Load from file: ', trim(fn_mom)
 
-                call nc_read(fn_mom, 'UVEL' , WORK, (/G%xl, G%yd, 1, 1/), (/G%nx, G%ny, G%nz, 1/)); uc = uc + WORK(:, :, :, 1) / nn
-                call nc_read(fn_mom, 'VVEL' , WORK, (/G%xl, G%yd, 1, 1/), (/G%nx, G%ny, G%nz, 1/)); vc = vc + WORK(:, :, :, 1) / nn
+                if ( abs(cmode) < 5) then
+                    call nc_read(fn_mom, 'UVEL' , WORK, (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); uc = uc + WORK(:, :, :, 1) / nn
+                    call nc_read(fn_mom, 'VVEL' , WORK, (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); vc = vc + WORK(:, :, :, 1) / nn
+                endif
                 if ( abs(cmode) == 0 .or. abs(cmode) == 1 .or. abs(cmode) == 2 ) then
-                    call nc_read(fn_mom, 'ADVU'   , WORK , (/G%xl, G%yd, 1, 1/), (/G%nx, G%ny, G%nz, 1/)); advx   = advx   + WORK(:, :, :, 1) / nn
-                    call nc_read(fn_mom, 'ADVV'   , WORK , (/G%xl, G%yd, 1, 1/), (/G%nx, G%ny, G%nz, 1/)); advy   = advy   + WORK(:, :, :, 1) / nn
-                    call nc_read(fn_mom, 'GRADX'  , WORK , (/G%xl, G%yd, 1, 1/), (/G%nx, G%ny, G%nz, 1/)); gradx  = gradx  + WORK(:, :, :, 1) / nn
-                    call nc_read(fn_mom, 'GRADY'  , WORK , (/G%xl, G%yd, 1, 1/), (/G%nx, G%ny, G%nz, 1/)); grady  = grady  + WORK(:, :, :, 1) / nn
-                    call nc_read(fn_mom, 'HDIFFU' , WORK , (/G%xl, G%yd, 1, 1/), (/G%nx, G%ny, G%nz, 1/)); hdiffx = hdiffx + WORK(:, :, :, 1) / nn
-                    call nc_read(fn_mom, 'HDIFFV' , WORK , (/G%xl, G%yd, 1, 1/), (/G%nx, G%ny, G%nz, 1/)); hdiffy = hdiffy + WORK(:, :, :, 1) / nn
-                    call nc_read(fn_mom, 'VDIFFU' , WORK , (/G%xl, G%yd, 1, 1/), (/G%nx, G%ny, G%nz, 1/)); vdiffx = vdiffx + WORK(:, :, :, 1) / nn
-                    call nc_read(fn_mom, 'VDIFFV' , WORK , (/G%xl, G%yd, 1, 1/), (/G%nx, G%ny, G%nz, 1/)); vdiffy = vdiffy + WORK(:, :, :, 1)
-                    call nc_read(fn_mom, 'SSH'    , WORK2, (/G%xl, G%yd, 1, 1/), (/G%nx, G%ny,    1, 1/)); ssh(:, :, 1) = ssh(:, :, 1) + WORK2(:, :, 1, 1) / nn
+                    call nc_read(fn_mom, 'ADVU'   , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); advx   = advx   + WORK(:, :, :, 1) / nn
+                    call nc_read(fn_mom, 'ADVV'   , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); advy   = advy   + WORK(:, :, :, 1) / nn
+                    call nc_read(fn_mom, 'GRADX'  , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); gradx  = gradx  + WORK(:, :, :, 1) / nn
+                    call nc_read(fn_mom, 'GRADY'  , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); grady  = grady  + WORK(:, :, :, 1) / nn
+                    call nc_read(fn_mom, 'HDIFFU' , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); hdiffx = hdiffx + WORK(:, :, :, 1) / nn
+                    call nc_read(fn_mom, 'HDIFFV' , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); hdiffy = hdiffy + WORK(:, :, :, 1) / nn
+                    call nc_read(fn_mom, 'VDIFFU' , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); vdiffx = vdiffx + WORK(:, :, :, 1) / nn
+                    call nc_read(fn_mom, 'VDIFFV' , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); vdiffy = vdiffy + WORK(:, :, :, 1)
+                    call nc_read(fn_mom, 'SSH'    , WORK2, (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny,    1, 1/)); ssh(:, :, 1) = ssh(:, :, 1) + WORK2(:, :, 1, 1) / nn
                 endif
                 if ( abs(cmode) == 1 .or. abs(cmode) == 2 .or. abs(cmode) == 3 .or. abs(cmode) == 4) then
-                    call nc_read(fn_mom, 'WVEL'   , WORK , (/G%xl, G%yd, 1, 1/), (/G%nx, G%ny, G%nz, 1/)); wc = wc + WORK(:, :, :, 1) / nn
+                    call nc_read(fn_mom, 'WVEL'   , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); wc = wc + WORK(:, :, :, 1) / nn
+                endif
+                if ( abs(cmode) == 5 ) then
+                    call nc_read(fn_mom, 'UEU'   , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); ueu = ueu + WORK(:, :, :, 1) / nn
+                    call nc_read(fn_mom, 'UEV'   , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); uev = uev + WORK(:, :, :, 1) / nn
+                    call nc_read(fn_mom, 'VNU'   , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); vnu = vnu + WORK(:, :, :, 1) / nn
+                    call nc_read(fn_mom, 'VNV'   , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); vnv = vnv + WORK(:, :, :, 1) / nn
+                    call nc_read(fn_mom, 'WTU'   , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); wtu = wtu + WORK(:, :, :, 1) / nn
+                    call nc_read(fn_mom, 'WTV'   , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); wtv = wtv + WORK(:, :, :, 1) / nn
                 endif
             enddo
         enddo
 
-        where(abs(uc) > 1e10) uc = 0.
-        where(abs(vc) > 1e10) vc = 0.
-        print*, 'uc: ', uc(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
-        print*, 'vc: ', vc(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
+        if ( abs(cmode) < 5) then
+            where(abs(uc) > 1e10) uc = 0.
+            where(abs(vc) > 1e10) vc = 0.
+            write(*, fmtm_vel) 'UVEL: ', uc(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vel) 'VVEL: ', vc(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        endif
         if ( abs(cmode) == 0 .or. abs(cmode) == 1 .or. abs(cmode) == 2 ) then
             where(abs(advx  ) > 1e10) advx   = 0.
             where(abs(advy  ) > 1e10) advy   = 0.
@@ -617,48 +640,61 @@ module control
             where(abs(vdiffx) > 1e10) vdiffx = 0.
             where(abs(vdiffy) > 1e10) vdiffy = 0.
             where(abs(ssh   ) > 1e10) ssh    = 0.
-            print*, 'Advx', advx(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
-            print*, 'Advy', advy(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
-            print*, 'Gradx', gradx(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
-            print*, 'Grady', grady(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
-            print*, 'Hdiffx', hdiffx(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
-            print*, 'Hdiffy', hdiffy(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
-            print*, 'Vdiffx', vdiffx(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
-            print*, 'Vdiffy', vdiffy(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
-            print*, 'SSH', ssh(G%xi_dp, G%yi_dp, 1)
+            write(*, fmtm_mom) 'ADVX: ', advx(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_mom) 'ADVY: ', advy(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_mom) 'GRADX: ', gradx(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_mom) 'GRADY: ', grady(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_mom) 'HDIFFU: ', hdiffx(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_mom) 'HDIFFV: ', hdiffy(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_mom) 'VDIFFU: ', vdiffx(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_mom) 'VDIFFV: ', vdiffy(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmts_mom) 'SSH: ', ssh(B%xi_dp, B%yi_dp, 1)
         endif
         if ( abs(cmode) == 1 .or. abs(cmode) == 2 .or. abs(cmode) == 3 .or. abs(cmode) == 4) then
             where(abs(wc) > 1e10) wc = 0.
-            print*, 'wc: ', wc(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
+            write(*, fmtm_vel) 'WVEL: ', wc(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        endif
+        if ( abs(cmode) == 5 ) then
+            where(abs(ueu) > 1e10) ueu = 0.
+            where(abs(uev) > 1e10) uev = 0.
+            where(abs(vnu) > 1e10) vnu = 0.
+            where(abs(vnv) > 1e10) vnv = 0.
+            where(abs(wtu) > 1e10) wtu = 0.
+            where(abs(wtv) > 1e10) wtv = 0.
+            write(*, fmtm_mom) 'UEU: ', ueu(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_mom) 'UEV: ', uev(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_mom) 'VNU: ', vnu(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_mom) 'VNV: ', vnv(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_mom) 'WTU: ', wtu(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_mom) 'WTV: ', wtv(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         endif
     endsubroutine
 
     subroutine init_zetavars_mean(cmode_m)
         integer, intent(in) :: cmode_m
-
-        print*, '  '
-        print*, 'Initiate mean field variables'
-
+        write(*, *)
+        write(*, '(A)') '-----------------------------------------------------'
+        write(*, '(A)') 'Initiate mean field variables'
         if (abs(cmode_m) == 3) then
-            allocate(advu_m(G%nx, G%ny, G%nz), advv_m(G%nx, G%ny, G%nz), advw_m(G%nx, G%ny, G%nz), &
-                     advVx_m(G%nx, G%ny, G%nz), advVy_m(G%nx, G%ny, G%nz), advVz_m(G%nx, G%ny, G%nz), &
-                     curlmet_m(G%nx, G%ny, G%nz), err_nldecomp_m(G%nx, G%ny, G%nz))
+            allocate(advu_m(B%nx, B%ny, B%nz), advv_m(B%nx, B%ny, B%nz), advw_m(B%nx, B%ny, B%nz), &
+                     advVx_m(B%nx, B%ny, B%nz), advVy_m(B%nx, B%ny, B%nz), advVz_m(B%nx, B%ny, B%nz), &
+                     curlmet_m(B%nx, B%ny, B%nz), err_nldecomp_m(B%nx, B%ny, B%nz))
             advu_m = 0. ; advv_m = 0.; advw_m = 0.
             advVx_m = 0.; advVy_m = 0.; advVz_m = 0.
             curlmet_m = 0.; err_nldecomp_m = 0.
         endif
 
         if (abs(cmode_m) == 4) then
-            allocate(curlnonl_m(G%nx, G%ny, G%nz))
+            allocate(curlnonl_m(B%nx, B%ny, B%nz))
             curlnonl_m = 0.
         endif
     endsubroutine
 
     subroutine release_zetavars_mean(cmode_m)
         integer, intent(in) :: cmode_m
-
-        print*, '  '
-        print*, 'Release mean field variables'
+        write(*, *)
+        write(*, '(A)') '-----------------------------------------------------'
+        write(*, '(A)') 'Release mean field variables'
 
         if (abs(cmode_m) == 3) then
             deallocate(advu_m, advv_m, advw_m, advVx_m, advVy_m, advVz_m, curlmet_m, err_nldecomp_m)
@@ -675,10 +711,11 @@ module control
         implicit none
         integer, intent(in) :: cmode_m
         character(len=*), intent(in) :: fn_zetam
-        real(kind=kd_r), dimension(G%nx, G%ny, G%nz, 1) :: WORK
+        real(kind=kd_r), dimension(B%nx, B%ny, B%nz, 1) :: WORK
 
-        print*, '  '
-        print*, 'Loading mean field variables from input files'
+        write(*, *)
+        write(*, '(A)') '-----------------------------------------------------'
+        write(*, '(A, A)') 'Loading mean field variables from file ', trim(fn_zetam)
 
         if (abs(cmode_m) == 3) then
             call nc_read(fn_zetam, 'advu'      , WORK); advu_m         = WORK(:, :, :, 1)
@@ -690,19 +727,19 @@ module control
             call nc_read(fn_zetam, 'curlmet'   , WORK); curlmet_m      = WORK(:, :, :, 1)
             call nc_read(fn_zetam, 'errnldcmp' , WORK); err_nldecomp_m = WORK(:, :, :, 1)
 
-            print*, 'advu', advu_m(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
-            print*, 'advv', advv_m(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
-            print*, 'advw', advw_m(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
-            print*, 'advVx', advVx_m(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
-            print*, 'advVy', advVy_m(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
-            print*, 'advVz', advVz_m(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
-            print*, 'err_nldecomp', err_nldecomp_m(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
-            print*, 'Curlmet: ', curlmet_m(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
+            print*, 'advu', advu_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            print*, 'advv', advv_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            print*, 'advw', advw_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            print*, 'advVx', advVx_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            print*, 'advVy', advVy_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            print*, 'advVz', advVz_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            print*, 'err_nldecomp', err_nldecomp_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            print*, 'Curlmet: ', curlmet_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         endif
 
         if (abs(cmode_m) == 4) then
             call nc_read(fn_zetam, 'curlnonl_m', WORK); curlnonl_m = WORK(:, :, :, 1)
-            print*, 'curlnonl_m', curlnonl_m(G%xi_dp, G%yi_dp, G%zi_dpst:G%zi_dped)
+            print*, 'curlnonl_m', curlnonl_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         endif
     endsubroutine
 
@@ -716,12 +753,14 @@ module control
         character :: fn_vor*300, yyyymmdd*20
         integer :: iyr, idoy
         integer :: nn, mm, dd
-        real(kind=kd_r), dimension(G%nx, G%ny, G%nz, 1) :: WORK
-        real(kind=kd_r), dimension(G%nx, G%ny, 1 , 1) :: WORK2
+        real(kind=kd_r), dimension(B%nx, B%ny, B%nz, 1) :: WORK
+        real(kind=kd_r), dimension(B%nx, B%ny, 1 , 1) :: WORK2
 
         nn = size(doylist) * size(yrlist)
-        print*, '  '
-        print*, 'Loading and averaing variables (velocity, mom. terms) from input files over ', nn, ' day(s)'
+
+        write(*, *)
+        write(*, '(A)') '-----------------------------------------------------'
+        write(*, '(A, I3, A)') 'Loading and averaing variables (vorticity) from input files over ', nn, ' day(s)'
 
         do iyr = 1, size(yrlist)
             do idoy = 1, size(doylist)
@@ -729,7 +768,9 @@ module control
 
                 write(fn_vor, '(A, A, A, A, A)') &
                     trim(fn%dir), trim(fn%pfx), trim(yyyymmdd), trim(fn%sfx), '.nc'
-                print*, fn_vor
+
+                write(*, '(A, A)') '  Load from file: ', trim(fn_vor)
+
                 if (abs(cmode) == 0 .or. abs(cmode) == 1 .or. abs(cmode) == 2) then
                     call nc_read(fn_vor, 'curlnonl' , WORK); curlnonl      = curlnonl      + WORK(:, :, :, 1) / nn
                     call nc_read(fn_vor, 'betav'    , WORK); betav         = betav         + WORK(:, :, :, 1) / nn
@@ -766,7 +807,7 @@ module control
             enddo
         enddo
     endsubroutine
-    !
+
     ! Get yyyymmdd from year and doy.
     ! iyr and idoy is overriden by yrnm_clm and avnm_clm.
     ! if idoy < 0, the string returns only the month part
@@ -801,6 +842,7 @@ module control
         write(yyyymmdd, '(A, A)') trim(yyyy), trim(mmdd)
     endsubroutine
 
+    ! Converting month and day to day of the year
     subroutine doy2date(idoy, mm, dd)
         implicit none
         integer, intent(in) :: idoy
@@ -846,9 +888,9 @@ module control
         stat_create = nf90_create(trim(fn_me), cmode=or(nf90_clobber,nf90_64bit_offset), ncid=ncid)
 
         ! Dimension
-        stat_defdim = nf90_def_dim(ncid, "nlon", G%nx, dimid_lon)
-        stat_defdim = nf90_def_dim(ncid, "nlat", G%ny, dimid_lat)
-        stat_defdim = nf90_def_dim(ncid, "z_t" , G%nz, dimid_dep)
+        stat_defdim = nf90_def_dim(ncid, "nlon", B%nx, dimid_lon)
+        stat_defdim = nf90_def_dim(ncid, "nlat", B%ny, dimid_lat)
+        stat_defdim = nf90_def_dim(ncid, "z_t" , B%nz, dimid_dep)
         stat_defdim = nf90_def_dim(ncid, "time", NF90_UNLIMITED, dimid_time)
 
         ! Coordinates
@@ -1058,74 +1100,74 @@ module control
 
         ! Writing cooordinates
         stat_putvar = nf90_put_var(ncid, varid_lat,  tlat , &
-           start = (/1, 1/), count = (/G%nx, G%ny/))
+           start = (/1, 1/), count = (/B%nx, B%ny/))
         stat_putvar = nf90_put_var(ncid, varid_lon,  tlong, &
-           start = (/1, 1/), count = (/G%nx, G%ny/))
+           start = (/1, 1/), count = (/B%nx, B%ny/))
         stat_putvar = nf90_put_var(ncid, varid_dep,  z_t)
 
         print*, '  '
         print*, '  Start writing zeta eddy mean file ...'
         stat_putvar = nf90_put_var(ncid, varids%curlnonl  , curlnonl      , &
-            start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+            start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         stat_putvar = nf90_put_var(ncid, varids%betav     , betav         , &
-            start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+            start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         stat_putvar = nf90_put_var(ncid, varids%stretchp  , stretchp      , &
-            start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+            start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         stat_putvar = nf90_put_var(ncid, varids%errcor    , err_cor       , &
-            start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+            start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         stat_putvar = nf90_put_var(ncid, varids%curlpgrad , curlpgrad     , &
-            start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+            start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         stat_putvar = nf90_put_var(ncid, varids%curlhdiff , curlhdiff     , &
-            start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+            start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         stat_putvar = nf90_put_var(ncid, varids%curlvdiff , curlvdiff     , &
-            start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+            start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         stat_putvar = nf90_put_var(ncid, varids%res       , res           , &
-            start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+            start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
 
         if (abs(cmode_m) == 3) then
             stat_putvar = nf90_put_var(ncid, varids%errnlsub  , err_nlsub     , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
 
             stat_putvar = nf90_put_var(ncid, varids%advum      , advu_m          , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid, varids%advvm      , advv_m          , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid, varids%advwm      , advw_m          , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid, varids%advVxm     , advVx_m         , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid, varids%advVym     , advVy_m         , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid, varids%advVzm     , advVz_m         , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid, varids%curlmetm   , curlmet_m       , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid, varids%errnldcmpm , err_nldecomp_m  , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
 
             stat_putvar = nf90_put_var(ncid, varids%advu     , advu  - advu_m , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid, varids%advv     , advv  - advv_m , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid, varids%advw     , advw  - advw_m, &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid, varids%advVx    , advVx - advVx_m, &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid, varids%advVy    , advVy - advVy_m, &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid, varids%advVz    , advVz - advVz_m, &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid, varids%curlmet  , curlmet - curlmet_m, &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid, varids%errnldcmp, err_nldecomp - err_nldecomp_m, &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         endif
 
         if (abs(cmode_m) == 4) then
             stat_putvar = nf90_put_var(ncid, varids%errnlsub  , curlnonl - curlnonl_m     , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid, varids%curlnonlc , curlnonl_m     , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         endif
 
         stat_io = nf90_close(ncid)
@@ -1144,16 +1186,17 @@ module control
         integer :: dimid_lon, dimid_lat, dimid_dep, dimid_time
         integer :: varid_lon, varid_lat, varid_dep, varid_time
 
-        print*, '  '
-        print*, 'Creating output file ', trim(fn_zeta)
-        print*, '  Start netcdf define ...'
+        write(*, *)
+        write(*, '(A)') '-----------------------------------------------------'
+        write(*, '(A)') 'Creating output file ', trim(fn_zeta)
+        write(*, '(A)') '  Start netcdf define ...'
 
         stat_create = nf90_create(trim(fn_zeta), cmode=or(nf90_clobber,nf90_64bit_offset), ncid=ncid_zeta)
 
         ! Dimension
-        stat_defdim = nf90_def_dim(ncid_zeta, "nlon", G%nx, dimid_lon)
-        stat_defdim = nf90_def_dim(ncid_zeta, "nlat", G%ny, dimid_lat)
-        stat_defdim = nf90_def_dim(ncid_zeta, "z_t" , G%nz, dimid_dep)
+        stat_defdim = nf90_def_dim(ncid_zeta, "nlon", B%nx, dimid_lon)
+        stat_defdim = nf90_def_dim(ncid_zeta, "nlat", B%ny, dimid_lat)
+        stat_defdim = nf90_def_dim(ncid_zeta, "z_t" , B%nz, dimid_dep)
         stat_defdim = nf90_def_dim(ncid_zeta, "time", NF90_UNLIMITED, dimid_time)
 
         ! Coordinates
@@ -1309,13 +1352,13 @@ module control
         endif
 
         stat_create = nf90_enddef(ncid_zeta)
-        print*, "    Finished netcdf define!", stat_create
+        write(*, '(A, I1)') "  Finished netcdf define: ", stat_create
 
         ! Writing cooordinates
         stat_putvar = nf90_put_var(ncid_zeta, varid_lat,  tlat , &
-           start = (/1, 1/), count = (/G%nx, G%ny/))
+           start = (/1, 1/), count = (/B%nx, B%ny/))
         stat_putvar = nf90_put_var(ncid_zeta, varid_lon,  tlong, &
-           start = (/1, 1/), count = (/G%nx, G%ny/))
+           start = (/1, 1/), count = (/B%nx, B%ny/))
         stat_putvar = nf90_put_var(ncid_zeta, varid_dep,  z_t)
 
         if (cmode < 0) then
@@ -1324,9 +1367,9 @@ module control
 
             stat_create = nf90_create(trim(fn_error), cmode=or(nf90_clobber,nf90_64bit_offset), ncid=ncid_error)
 
-            stat_defdim = nf90_def_dim(ncid_error, "nlon", G%nx, dimid_lon)
-            stat_defdim = nf90_def_dim(ncid_error, "nlat", G%ny, dimid_lat)
-            stat_defdim = nf90_def_dim(ncid_error, "z_t" , G%nz, dimid_dep)
+            stat_defdim = nf90_def_dim(ncid_error, "nlon", B%nx, dimid_lon)
+            stat_defdim = nf90_def_dim(ncid_error, "nlat", B%ny, dimid_lat)
+            stat_defdim = nf90_def_dim(ncid_error, "z_t" , B%nz, dimid_dep)
             stat_defdim = nf90_def_dim(ncid_error, "time", NF90_UNLIMITED, dimid_time)
 
             stat_defvar = nf90_def_var(ncid_error, "TLONG", NF90_FLOAT, &
@@ -1352,9 +1395,9 @@ module control
             print*, "    Finished netcdf define!", stat_create
 
             stat_putvar = nf90_put_var(ncid_error, varid_lat,  tlat , &
-               start = (/1, 1/), count = (/G%nx, G%ny/))
+               start = (/1, 1/), count = (/B%nx, B%ny/))
             stat_putvar = nf90_put_var(ncid_error, varid_lon,  tlong, &
-               start = (/1, 1/), count = (/G%nx, G%ny/))
+               start = (/1, 1/), count = (/B%nx, B%ny/))
             stat_putvar = nf90_put_var(ncid_error, varid_dep,  z_t)
         else
             ncid_error = 0
@@ -1373,50 +1416,50 @@ module control
 
         if (abs(cmode) == 0 .or. abs(cmode) == 1 .or. abs(cmode) == 2) then
             stat_putvar = nf90_put_var(ncid_zeta, varids%curlnonl , curlnonl , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid_zeta, varids%betav    , betav    , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid_zeta, varids%stretchp , stretchp , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid_zeta, varids%errcor   , err_cor  , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid_zeta, varids%curlpgrad, curlpgrad, &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid_zeta, varids%curlhdiff, curlhdiff, &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid_zeta, varids%curlvdiff, curlvdiff, &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid_zeta, varids%res      , res      , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         endif
 
         if (abs(cmode) == 1 .or. abs(cmode) == 4) then
             stat_putvar = nf90_put_var(ncid_zeta, varids%curlnonlc , curladv + curlmet , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         endif
 
         if (abs(cmode) == 1 .or. abs(cmode) == 2) then
             stat_putvar = nf90_put_var(ncid_zeta, varids%errnlsub , err_nlsub   , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         endif
 
         if (abs(cmode) == 2 .or. abs(cmode) == 3) then
             stat_putvar = nf90_put_var(ncid_zeta, varids%advu     , advu        , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid_zeta, varids%advv     , advv        , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid_zeta, varids%advw     , advw        , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid_zeta, varids%advVx    , advVx       , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid_zeta, varids%advVy    , advVy       , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid_zeta, varids%advVz    , advVz       , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid_zeta, varids%curlmet  , curlmet     , &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid_zeta, varids%errnldcmp, err_nldecomp, &
-                start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         endif
         print*, '  Finished writing zeta equation file '
 
@@ -1425,9 +1468,9 @@ module control
             print*, '  Start writing error file ...'
 
             stat_putvar = nf90_put_var(ncid_error, varids%errnl_rev, rr_rev, &
-               start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+               start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid_error, varids%errnl_cha, rr_cha, &
-               start = (/1, 1, 1, 1/), count = (/G%nx, G%ny, G%nz, 1/))
+               start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             print*, '  Finished writing error file '
         endif
     endsubroutine

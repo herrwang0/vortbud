@@ -1,23 +1,20 @@
-all: zetaeq meaneddy
-obj = mod_params.o mod_zeta.o mod_popfun.o mod_popload.o mod_ncio.o mod_derives.o
+all: zetaeq
+obj = mod_params.o mod_zeta.o mod_popfun.o mod_ncio.o mod_derives.o
 f90c = ifort
-#flag = -I$(NETCDF_DIR)/include -lnetcdff
-flag = -L/Users/hewang/Library/netcdf/lib -lnetcdff  -I/Users/hewang/Library/netcdf/include
+flag = -I$(NETCDF_DIR)/include -lnetcdff
+#flag = -L/Users/hewang/Library/netcdf/lib -lnetcdff  -I/Users/hewang/Library/netcdf/include
 
 zetaeq: zetaeq.x
-#meaneddy: zetaeq_meaneddy.x
+debug_zeta: debug_zeta.x
 
-zetaeq.x: main.f90 $(obj) mod_control.o
-	$(f90c) -o zetaeq.x main.f90 mod_control.o $(obj) $(flag)
-#zetaeq_meaneddy.x: main_eddy.f90 $(obj) mod_control_eddy.o
-#	$(f90c) -o zetaeq_meaneddy.x main_eddy.f90 mod_control_eddy.o $(obj) $(flag)
+zetaeq.x: main.f90 $(obj) mod_io.o
+	$(f90c) -o zetaeq.x main.f90 mod_io.o $(obj) $(flag)
+debug_zeta.x: test_zeta.f90 $(obj) mod_io.o
+	$(f90c) -o debug_zeta.x test_zeta.f90 mod_io.o $(obj) $(flag)
 
-mod_control_eddy.o: mod_control_eddy.f90 mod_zeta.o mod_popload.o mod_ncio.o mod_params.o
-	$(f90c) -c mod_control_eddy.f90 $(flag)
-mod_control.o: mod_control.f90 mod_zeta.o mod_popload.o mod_ncio.o mod_params.o
-	$(f90c) -c mod_control.f90 $(flag)
-mod_popload.o: mod_popload.f90 mod_ncio.o mod_params.o
-	$(f90c) -c mod_popload.f90 $(flag)
+
+mod_io.o: mod_io.f90 mod_zeta.o mod_ncio.o mod_params.o
+	$(f90c) -c mod_io.f90 $(flag)
 mod_zeta.o: mod_zeta.f90 mod_ncio.o mod_derives.o mod_popfun.o mod_params.o
 	$(f90c) -c mod_zeta.f90 $(flag)
 mod_popfun.o: mod_popfun.f90 mod_derives.o mod_params.o
