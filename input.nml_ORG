@@ -1,0 +1,126 @@
+! calcmode (voricity equation) and memode (mean/eddy decomposition) are independent,
+!    i.e. you can only calculate vorticity equation for each input file then perform
+!    mean/eddy decomposition, either in the same run or using existing vort equation files.
+
+&calcmode
+ifcurl        = F  ! [FALSE] If curl of momentum equation
+ifdecomp      = F  ! [FALSE] If full decomposition of nonlinear term (advection, stretching, twisting etc)
+ifdecompdebug = F  ! [FALSE] If output files with detailed error term from nonlinear decomposition
+/
+
+&memode
+ifmeaneddy   = T   ! [FALSE] If mean/eddy decomposition for the nonlinear term
+ifmeanclm    = T   ! [FALSE] Switch for using climatology (multiple years) (True) or mean (a single year) (False) for m/e decomposition
+ifdecomposed = T   ! [FALSE] If nonlinear term is fully decomposed (either from this calculation or existing files)
+menm_clm = ""      ! [""] Wildcard for the year part of mean file if ifmeanclm = T. It is used to override the default "yrst-yred".
+
+! Frequency control for mean/eddy decomposition
+!   Four options are available (listed by decreasing priority)
+!   (a) meanfreq: period name ("a" for annual, "m" for monthly)
+!   (b) seclist_in_st, seclist_in_ed: list of starting and ending date
+!   (c) secst, seced: starting and ending day (of a year) for a single section
+!   (d) nda_sec: Fixed number of days in each section
+meanfreq  = "m"    ! [""]
+seclist_in_st = 0  ! [0]
+seclist_in_ed = 0  ! [0]
+secst = 0          ! [0]
+seced = 0          ! [0]
+nda_sec = 365      ! [365]
+/
+
+! Time control for input momentum files
+!   User input for forming a yrlist and doylist for input files. (As "month" is
+!     simply a (arbitrary) concept for grouping days, we use day of year (doy) here.)
+!   For the sake of flexibility, three options are provided for y/m/d:
+!     a wildcard name, a list and start/end points
+!   Three options for year (listed by decreasing priority)
+!     (a) yrnm_clm: Wildcard for the year part of input momentum file(s).
+!     (b) yrlist_in: A list of years, e.g. 2005, 2006, 2007, 2008, 2009
+!     (c) yrst/yred: Start and end years
+!   For month/day:
+!     (a) avnm_clm: Wildcard for the month/day part of input momentum files(s).
+!           A non-empty value automatically sets mnlist/dalist/doylist empty
+!     (b) mnlist_in: Similar to yrlist_in.
+!           If any(mnlist_in < 0), it indicates input files are annual mean.
+!           If mnlist_in = 0, all 12 months are used.
+!         dalist_in: Similar to yrlist_in/mnlist_in
+!           If any(dalist_in < 0), it indicates input files are monthly mean.
+!           If dalist_in = 0, all days in a month are used.
+!     (c) mnst/mned, dast/daed: Similar to yrst/yred. For daed, set daed = 31 is equivalent to the last day of any month
+&time
+yrnm_clm = ""      ! [""]
+yrlist_in = 2005, 2006, 2007, 2008, 2009  ! [0*60]
+yrst = 0           ! [0]
+yred = 0           ! [0]
+avnm_clm = ""      ! [""]
+mnlist_in = 0      ! [0*12]
+mnst = 1           ! [1]
+mned = 12          ! [12]
+dalist_in = 0      ! [0*31]
+dast = 1           ! [1]
+daed = 31          ! [31]
+/
+
+! Boundary indices for the calculation domain
+!   x goes from left (xl) to right (xr) and y goes from down (yd) to up (yu).
+!   "reg": absolute indices (in the entire globe) for region of interest
+!   "ref": absolute indices for input files (reference)
+&bnds
+B%xl_reg = 1481    ! Default values for the Arabian Sea. Check mod_params.f90 for actual values.
+B%xr_reg = 1900    !
+B%yd_reg = 1082    !
+B%yu_reg = 1463    !
+B%subreg = "ase"   ! ["sc"] Name for the subregion. Also the default suffix for output files.
+B%xl_ref = 1422    ! [1422] Default values are for the Arabian Sea files
+B%xr_ref = 2150    ! [1422]
+B%yd_ref = 978     ! [978]
+B%yu_ref = 1510    ! [1510]
+
+!  Display indices (x, y, zst, zed) for quick check in log files. ti_dp is obsolete.
+B%xi_dp = 100
+B%yi_dp = 100
+B%zi_dpst = 16
+B%zi_dped = 23
+B%ti_dp = 10
+/
+
+! Full name for grid files
+!   "ocn_static_grid.nc" should include 2-D fields lat, long, area, cell sizes etc.
+!   "ocn_static_dz" should include 3-D fields DZT, DZU, TMASK, UMASK
+!   "ocn_constant.nc" should include constants like omega, grav
+!   If none given, the program will look for these files in the working directory.
+&grid_files
+fngrid%grid = "/ccs/home/hewang/pop0_1/ocn_static_grid.nc"
+fngrid%dz = "/ccs/home/hewang/pop0_1/ocn_static_dz.nc"
+fngrid%cons = "/ccs/home/hewang/pop0_1/ocn_constant.nc"
+/
+
+! Input and output filename information
+!   Every filename consists of dir (directory), pfx (prefix), sfx (suffix) and dlm (delimiter)
+!   Filename = dir + pfx + YYYY + dlm + MM + dlm + DD + sfx. YYYY + dlm + MM + dlm + DD can be
+!     overriden by yrnm_clm and avnm_clm above.
+!   Input files: momentum files ("mom", has momentum terms, u, v, w)
+!   Output files: vorticity files ("vor"), vorticity mean files ("vorm") and vorticity mean/eddy files ("vore")
+&input_files
+fn_mom_dir = "/lustre/atlas1/cli115/proj-shared/SIO/For_He/"
+fn_mom_pfx = "ia_top_tx0.1_v2_yel_patc_1948_intel.pop.h.IO.nday1."
+fn_mom_sfx = ""
+fn_mom_dlm = "-"
+/
+
+&output_files
+fn_vor_dir = "/lustre/atlas/proj-shared/cli115/hewang/data/daily_mean/"
+fn_vor_pfx = "vort_bud_" ! [vort_bud_]
+fn_vor_sfx = ""          ! [_ + B%subreg]
+fn_vor_dlm = ""          ! [fn_mom_dlm]
+
+fn_vorm_dir = ""         ! [fn_vor_dir]
+fn_vorm_pfx = ""         ! [fn_vor_sfx]
+fn_vorm_sfx = ""         ! [fn_vor_sfx + _m]
+fn_vorm_dlm = ""         ! [fn_mom_dlm]
+
+fn_vore_dir = ""         ! [fn_vor_dir]
+fn_vore_pfx = ""         ! [fn_vor_sfx]
+fn_vore_sfx = ""         ! [fn_vor_sfx + _me]
+fn_vore_dlm = ""         ! [fn_mom_dlm]
+/

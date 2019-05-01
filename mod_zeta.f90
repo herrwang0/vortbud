@@ -44,29 +44,21 @@ module zeta
 
     contains
     !!--------------------------------------------------------------------------
-    ! * Basic functions
+    ! * Input functions
+    ! null (empty): do nothing.
     ! curl ("c"): curl of zeta equations terms, including two (+1) tersm from Coriolis
     !                (nonlinear, curl of pgrad, hdiff, vdiff, residual,
     !                 betav from Coriolis, stretching from Coriolis, error with Coriolis decomposition)
     ! offline adv ("a"): offline calculation of nonlinear advection term (curladv)
     ! offline met ("m"): offline calculation of nonlinear metric term (curlmet)
-    ! decomp adv ("d"): decomposition of nonlinear advection term
+    ! decomp adv ("d"): decomposition of nonlinear advection term.
     ! online adv from flux ("f"): "online" calculation of nonlinear advection term through momentum fluxes
     ! + err_nlsub ("e"): difference between curlnonl online and offline (should not be used as a standalone function)
-
-    ! * Calculation mode
-    ! cmode = 0: "c"
-    ! cmode = 1: "c" + "a" + "m" + "e"
-    ! cmode = 2: "c" + "d" + "m" + "e"
-    ! cmode = 3: "d" + "m"
-    ! cmode = 4: "a" + "m"
-    ! cmode = 5: "f"
-    ! cmode = -1: null mode
     !!--------------------------------------------------------------------------
-    subroutine calc_zeta(cmode, func)
+
+    subroutine calc_zeta(func)
         implicit none
-        integer, intent(in), optional :: cmode
-        character, intent(in), optional :: func
+        character(len=*), intent(in), optional :: func
         character(len=10) :: func_c
 
         write(fmts_vor, '(A, A, A)' ) '(A20, ', trim(fmt_exp), ')'
@@ -78,13 +70,7 @@ module zeta
         write(*, '(A)') '-----------------------------------------------------'
         write(*, '(A)'), 'Start calculating voriticity equation'
 
-        if (present(cmode)) then
-            if (cmode == -1) then
-                call warning_msg("null")
-                return
-            endif
-            call decode_cmode(cmode, func_c)
-        elseif (present(func)) then
+        if (present(func) .and. trim(func) /= "") then
             func_c = func
         else
             call warning_msg("noinput")
@@ -126,10 +112,12 @@ module zeta
             call calc_curladv_flx()
         endif
 
-        write(*, *)
-        write(*, '(A)') '  ---------------------------------------------------'
-        write(*, '(A)') '  Verifying offline calculations'
-        call verify_nonl()
+        if (index(func_c, "a") /= 0 .or. index(func_c, "d") /= 0) then
+            write(*, *)
+            write(*, '(A)') '  ---------------------------------------------------'
+            write(*, '(A)') '  Verifying offline calculations'
+            call verify_nonl()
+        endif
     endsubroutine
 
     subroutine load_const()
@@ -352,8 +340,8 @@ module zeta
         where(umask) gradx = 0.
         where(umask) grady = 0.
 
-        write(*, fmtm_vor) 'pgradx', gradx(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-        write(*, fmtm_vor) 'pgrady', grady(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        write(*, fmtm_vor) 'pgradx: ', gradx(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        write(*, fmtm_vor) 'pgrady: ', grady(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
 
         !!----------------------------------------------------------------------
         ! Curl of nonlinear, cor, pgrad, h/v diffusion and res terms
@@ -416,7 +404,7 @@ module zeta
         !!----------------------------------------------------------------------
         ! Verifying decomposition and clean up
         write(*, *)
-        write(*, '(A)') '    Clean up and verifying decomposition of curl(-fu, fv) ...'
+        write(*, '(A)') '    Verify decomposition of curl(-fu, fv) ...'
         do iz = B%zi_dpst, B%zi_dped
             write(*, fmts_vor) 'Curlcor: ', curlcor  (B%xi_dp, B%yi_dp, iz)
             write(*, fmts_vor) 'bv + -fdwdz: ', betav(B%xi_dp, B%yi_dp, iz) + stretchp(B%xi_dp, B%yi_dp, iz)
@@ -807,10 +795,10 @@ module zeta
 
 
           ! Add terms to compose flux of 3D voricity twisting
-            call ddx_w(uc(:, :, iz) * uc(:, :, iz) * dzu(:, :, iz), ONES, WORK1)
+            call ddx_w(0.5 * uc(:, :, iz) * uc(:, :, iz) * dzu(:, :, iz), ONES, WORK1)
             call ddy_s(WORK1, tarea * dzt(:,:,iz), uudxdy)
 
-            call ddx_w(vc(:, :, iz) * vc(:, :, iz) * dzu(:, :, iz), ONES, WORK1)
+            call ddx_w(0.5 * vc(:, :, iz) * vc(:, :, iz) * dzu(:, :, iz), ONES, WORK1)
             call ddy_s(WORK1, tarea * dzt(:,:,iz), vvdxdy)
 
             if (iz == B%nz) then
@@ -818,7 +806,7 @@ module zeta
             else
                 wm = (wt(:, :, iz) + wt(:, :, iz+1)) / 2
             endif
-            call ddx_w(wm * wm * dzu(:, :, iz), ONES, WORK1)
+            call ddx_w(0.5 * wm * wm * dzu(:, :, iz), ONES, WORK1)
             call ddy_s(WORK1, tarea * dzt(:,:,iz), wwdxdy)
 
             if (iz == 1) then
@@ -929,33 +917,16 @@ module zeta
         enddo
     endsubroutine
 
-    subroutine init_zetavars_input(cmode, func)
+    subroutine init_zetavars_input(func)
         implicit none
-        integer, intent(in), optional :: cmode
         character(len=*), intent(in), optional :: func
         character(len=10) :: func_c
 
         write(*, *)
         write(*, '(A)') '-----------------------------------------------------'
         write(*, '(A)') 'Initializing input variables'
-        if (present(cmode)) then
-            if (cmode == -1) then
-                call warning_msg("null")
-                return
-            else
-                call decode_cmode(cmode, func_c)
-                if (func_c == "") then
-                    call warning_msg("invalid")
-                    return
-                endif
-            endif
-        elseif (present(func)) then
-            if (func == "") then
-                call warning_msg("null")
-                return
-            else
-                func_c = func
-            endif
+        if (present(func) .and. trim(func) /= "") then
+            func_c = func
         else
             call warning_msg("noinput")
             return
@@ -988,33 +959,16 @@ module zeta
         endif
     endsubroutine
 
-    subroutine init_zetavars_output(cmode, func)
+    subroutine init_zetavars_output(func)
         implicit none
-        integer, intent(in), optional :: cmode
         character(len=*), intent(in), optional :: func
         character(len=10) :: func_c
 
         write(*, *)
         write(*, '(A)') '-----------------------------------------------------'
         write(*, '(A)') 'Initializing output variables'
-        if (present(cmode)) then
-            if (cmode == -1) then
-                call warning_msg("null")
-                return
-            else
-                call decode_cmode(cmode, func_c)
-                if (func_c == "") then
-                    call warning_msg("invalid")
-                    return
-                endif
-            endif
-        elseif (present(func)) then
-            if (func == "") then
-                call warning_msg("null")
-                return
-            else
-                func_c = func
-            endif
+        if (present(func) .and. trim(func) /= "") then
+            func_c = func
         else
             call warning_msg("noinput")
             return
@@ -1053,33 +1007,16 @@ module zeta
         endif
     endsubroutine
 
-    subroutine release_zetavars_input(cmode, func)
+    subroutine release_zetavars_input(func)
         implicit none
-        integer, intent(in), optional :: cmode
         character(len=*), intent(in), optional :: func
         character(len=10) :: func_c
 
         write(*, *)
         write(*, '(A)') '-----------------------------------------------------'
         write(*, '(A)') 'Releasing input variables'
-        if (present(cmode)) then
-            if (cmode == -1) then
-                call warning_msg("null")
-                return
-            else
-                call decode_cmode(cmode, func_c)
-                if (func_c == "") then
-                    call warning_msg("invalid")
-                    return
-                endif
-            endif
-        elseif (present(func)) then
-            if (func == "") then
-                call warning_msg("null")
-                return
-            else
-                func_c = func
-            endif
+        if (present(func) .and. trim(func) /= "") then
+            func_c = func
         else
             call warning_msg("noinput")
             return
@@ -1100,33 +1037,16 @@ module zeta
         endif
     endsubroutine
 
-    subroutine release_zetavars_output(cmode, func)
+    subroutine release_zetavars_output(func)
         implicit none
-        integer, intent(in), optional :: cmode
         character(len=*), intent(in), optional :: func
         character(len=10) :: func_c
 
         write(*, *)
         write(*, '(A)') '-----------------------------------------------------'
-        write(*, '(A)') 'Initializing output variables'
-        if (present(cmode)) then
-            if (cmode == -1) then
-                call warning_msg("null")
-                return
-            else
-                call decode_cmode(cmode, func_c)
-                if (func_c == "") then
-                    call warning_msg("invalid")
-                    return
-                endif
-            endif
-        elseif (present(func)) then
-            if (func == "") then
-                call warning_msg("null")
-                return
-            else
-                func_c = func
-            endif
+        write(*, '(A)') 'Releasing output variables'
+        if (present(func) .and. trim(func) /= "") then
+            func_c = func
         else
             call warning_msg("noinput")
             return
@@ -1152,35 +1072,9 @@ module zeta
         endif
     endsubroutine
 
-    subroutine decode_cmode(cmode, func)
-        implicit none
-        integer, intent(in) :: cmode
-        character(len=*), intent(inout) :: func
-        select case (cmode)
-            case (0)
-                func = "c"
-            case (1)
-                func = "came"
-            case (2, -2)
-                func = "cdme"
-            case (3, -3)
-                func = "dm"
-            case (4)
-                func = "am"
-            case (5)
-                func = "f"
-            case default
-                func = ""
-        endselect
-    endsubroutine
-
     subroutine warning_msg(incident)
         character(len=*), intent(in) :: incident
         select case (trim(incident))
-            case("null")
-                write(*, '(A)') "cmode = -1 or func = "". Do nothing."
-            case("invalid")
-                write(*, '(A)') "Invalid cmode or func. Exit."
             case("noinput")
                 write(*, '(A)') "Neither cmode or func is given. Exit."
         endselect

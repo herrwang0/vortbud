@@ -12,7 +12,7 @@ module io
     ! public :: nc_varid, load_params, get_yyyymmdd, loadave_mom_sf, load_mean_sf, loadave_vor_sf, &
     !           output_sf,
     public :: load_params, get_yyyymmdd, loadave_mom_sf, output_sf, load_mean_sf, &
-              loadave_vor_sf, init_zetavars_mean, release_zetavars_mean, output_me
+              loadave_vor_sf, init_zetavars_mean, release_zetavars_mean, output_me, check_meanfile
 
     type filename
         character(len = 300) :: fn
@@ -30,8 +30,8 @@ module io
         character(len=9) :: menm_clm = ""
         ! list of years to loop
         integer, allocatable :: yrlist(:)
-        ! list of general time point to loop (either doylist or seclist)
-        integer, allocatable :: tlist(:, :)
+        ! ! list of general time point to loop (either doylist or seclist)
+        ! integer, allocatable :: tlist(:, :)
         ! list of doy to loop
         integer, allocatable :: doylist(:)
         ! list of sections for mean eddy decomposition
@@ -55,8 +55,8 @@ module io
 
     !!--------------------------------------------------------------------------
     ! * Calculation mode *
-    logical, public :: ifcurl, ifdecomp, ifdecompdebug = .False.
-    logical, public :: ifmeaneddy, ifmeanclm, ifdecomposed = .True.
+    logical, public :: ifcurl = .False., ifdecomp = .False., ifdecompdebug = .False.
+    logical, public :: ifmeaneddy = .False., ifmeanclm = .FALSE., ifdecomposed = .True.
 
     !!----------------------------------------------------------------------------
     type(filename), public :: fn_mom, fn_vor, fn_vorm, fn_vore, fn_error
@@ -67,18 +67,19 @@ module io
         advu_m, advv_m, advw_m, advVx_m, advVy_m, advVz_m, curlmet_m, err_nldecomp_m, curlnonl_m
     !!----------------------------------------------------------------------------
 
-    character(len = 100) :: fmts_vel, fmtm_vel, fmts_mom, fmtm_mom, fmts_flx, fmtm_flx
+    character(len = 100) :: fmts_vel, fmtm_vel, fmts_mom, fmtm_mom, fmts_flx, fmtm_flx, fmts_vor, fmtm_vor
 
     contains
-    subroutine load_params(cmode, cmode_m)
+    subroutine load_params(func, func_m, func_me)
         use, intrinsic :: IEEE_ARITHMETIC
         implicit none
-        integer, intent(inout) :: cmode, cmode_m
+        ! integer, intent(inout) :: cmode, cmode_m
+        character(len=*), intent(inout) :: func, func_m, func_me
         integer :: nml_error
         integer :: iyr, imn, nmn, ida, nda, idoy, isec
 
         !!--------------------------------------------------------------------------
-        ! * Date for the main loop *
+        ! * Date for the input files *
         ! Date format
         ! Two options in input.nml for yr, mn and da (listed by prioity)
         ! (a): list
@@ -88,7 +89,7 @@ module io
         ! If any negative number appears in mnlist, dalist, then assume average at this level.
         !    For example, mnlist_in = -1 indicates input file is annually averaged (therefore, no mnlist AND dalist needed).
         ! Starting and ending year
-        integer :: yrst = 2005, yred = 2009
+        integer :: yrst = 0, yred = 0
         ! Starting and ending month
         integer :: mnst = 1, mned = 12
         ! Starting and ending day
@@ -111,7 +112,7 @@ module io
         !!--------------------------------------------------------------------------
         ! * Mean field frequency *
         ! Date format
-        ! Four options in input.nml (listed by prioity)
+        ! Four options are available (listed by decreasing priority)
         ! (a) meanfreq: period name ("a" for annual, "m" for monthly)
         ! (b) seclist_in_st, seclist_in_ed: list of starting and ending date
         ! (c) secst, seced: starting and ending day (of a year) for a single section
@@ -120,6 +121,8 @@ module io
         integer, dimension(365) :: seclist_in_st = 0, seclist_in_ed = 0
         integer :: secst = 0, seced = 0
         integer :: nda_sec = 365
+
+        character(len = 9) :: menm_clm = ""
 
         !!--------------------------------------------------------------------------
         ! * Input file info *
@@ -152,7 +155,7 @@ module io
         character(len = 1  ) :: fn_vore_dlm = "" ! Default is the same as input
 
         namelist /calcmode/ ifcurl, ifdecomp, ifdecompdebug
-        namelist /mecmode/ ifmeaneddy, ifmeanclm, ifdecomposed, meanfreq, nda_sec, seclist_in_st, seclist_in_ed, secst, seced
+        namelist /memode/ ifmeaneddy, ifmeanclm, ifdecomposed, menm_clm, meanfreq, nda_sec, seclist_in_st, seclist_in_ed, secst, seced
         namelist /time/ yrst, yred, mnst, mned, dast, daed, &
                         yrnm_clm, avnm_clm, yrlist_in, mnlist_in, dalist_in
         namelist /bnds/ B
@@ -166,8 +169,8 @@ module io
         open(101, file=fn_namelist, status="old", iostat=nml_error)
         read(101, nml=calcmode, iostat=nml_error)
           write(*, '(A30, I)') "input <calcmode>: ", nml_error
-        read(101, nml=mecmode, iostat=nml_error)
-          write(*, '(A30, I)') "input <mecmode>: ", nml_error
+        read(101, nml=memode, iostat=nml_error)
+          write(*, '(A30, I)') "input <memode>: ", nml_error
         read(101, nml=time, iostat=nml_error)
           write(*, '(A30, I)') "input <time>: ", nml_error
         read(101, nml=bnds, iostat=nml_error)
@@ -200,85 +203,94 @@ module io
         if (yrnm_clm /= "") then
             write(*, '(4A)') "yrnm_clm = ", trim(yrnm_clm), ". Input files are climatology averaged over ", trim(yrnm_clm)
             write(*, *)
-            cmode_m = -1
+            func_m = ""
+            func_me = ""
 
             if (ifmeaneddy .and. .not. ifmeanclm) then
-                write(*, '(A)') "  Warning: input files are climatology and ifmeanclm is by definiation turned on for mean/eddy decomposition."
+                write(*, '(A)') "  Warning: input files are climatology and 'ifmeanclm' is by definiation turned on for mean/eddy decomposition."
                 write(*, *)
                 ifmeanclm = .True.
             endif
 
             if     (      ifcurl .and. .not. ifdecomp .and. .not. ifmeaneddy) then
                 write(*, '(A)') 'Curl of momentum equation for each input file'
-                write(*, '(A)') '  (mode 0)'
-                cmode = 0
+                write(*, '(A)') '  (function mode = "c")'
+                func = "c"
             elseif (      ifcurl .and. .not. ifdecomp .and.       ifmeaneddy) then
                 write(*, '(A)') 'Curl of momentum equation and mean/eddy decomposition for the nonlinear term'
-                write(*, '(A)') '  (mode 1)'
-                cmode = 1
+                write(*, '(A)') '  (function mode = "came")'
+                func = "came"
             elseif (      ifcurl .and.       ifdecomp                       ) then
-                write(*, '(A)') 'Curl of momentum equation and decomposition of the nonlinear term'
-                write(*, '(A)') '  (mode 2)'
+                write(*, '(A)') 'Curl of momentum equation and full decomposition of the nonlinear term'
+                write(*, '(A)') '  (function mode =  "cdme")'
                 write(*, '(A)') '  ERR_nlsub == curlnonl_eddy and only mean terms have decompostion.'
-                cmode = 2
+                func = "cdme"
                 if (ifdecompdebug) then
-                   cmode = -2
+                   func = "cdme-"
                 endif
                 if (.not. ifmeaneddy) then
                     write(*,'(A)') "  Note: ifmeaneddy is set to False. A decomposition of nonlinear terms of the climatology &
                              is essentially equivalent to a mean/eddy decomposition."
                     ifmeaneddy = .True.
                 endif
-            elseif (.not. ifcurl .and. .not. ifdecomp .and.       ifmeaneddy) then
-                write(*, '(A)') "Cannot do mean/eddy decomposition only! Exit."
+            ! elseif (.not. ifcurl .and. .not. ifdecomp .and.       ifmeaneddy) then
+            !     write(*, '(A)') "Cannot do mean/eddy decomposition only! Exit."
+            elseif (.not. ifcurl .and. .not. ifdecomp) then
+                write(*, '(A)') "Both 'ifcurl' and 'ifdecomp' are set to False. Nothing will be done for climatology files. Exit."
                 stop
             endif
         else
             if     (      ifcurl .and. .not. ifdecomp .and. .not. ifmeaneddy) then
                 write(*, '(A)') 'Curl of momentum equation for each input file'
-                write(*, '(A)') '  (mode 0)'
-                cmode = 0
-                cmode_m = -1
+                write(*, '(A)') '  (function mode = "c")'
+                func = "c"
+                func_m = ""
+                func_me = ""
             elseif (      ifcurl .and. .not. ifdecomp .and.       ifmeaneddy) then
                 write(*, '(A)') 'Curl of momentum equation and mean/eddy decomposition for the nonlinear term'
-                write(*, '(A)') '  (mode 0 + mode 4)'
-                cmode = 0
-                cmode_m = 4
+                write(*, '(A)') '  (function mode = "c" and function mode = "am")'
+                func = "c"
+                func_m = "am"
+                func_me = func
             elseif (      ifcurl .and.       ifdecomp                       ) then
                 write(*, '(A)') 'Curl of momentum equation and decomposition of the nonlinear term'
-                write(*, '(A)') '  (mode 2)'
-                cmode = 2
+                write(*, '(A)') '  (function mode = "cdme")'
+                func = "cdme"
                 if (ifdecompdebug) then
-                   cmode = -2
+                   func = "cdme-"
                 endif
-
                 if (ifmeaneddy) then
                    write(*, '(A)'), '  and Mean/eddy decomposition'
-                   cmode_m = 3
+                   func_m = "dm"
+                   func_me = func
                 else
-                   cmode_m = -1
+                   func_m = ""
+                   func_me = ""
                 endif
             elseif (.not. ifcurl .and. .not. ifdecomp .and.       ifmeaneddy) then
                 write(*, '(A)') "Mean/eddy decomposition will be calculated based on given decomposed zeta equation files"
-                write(*, '(A)') "  Skipping the main loop ..."
+                ! write(*, '(A)') "  Skipping the main loop ..."
                 if (ifdecomposed) then
                     write(*, '(A)') "Zeta equation files include decomposed nonlinear terms."
-                    cmode = -1
-                    cmode_m = 3
+                    func = ""
+                    func_m = "dm"
+                    func_me = "cdme"
                 else
                     write(*, '(A)') "Zeta equation files does not include decomposed nonlinear terms."
-                    cmode = -1
-                    cmode_m = 4
+                    func = ""
+                    func_m = "am"
+                    func_me = "c"
                 endif
             endif
         endif
         if (.not. ifcurl .and. ifdecomp ) then
             write(*, '(A)'), 'Decomposition of the nonlinear term only.'
-            write(*, '(A)'), '  (mode 3)'
-            cmode = 3
-            cmode_m = -1
+            write(*, '(A)'), '  (function mode = "dm")'
+            func = "dm"
+            func_m = ""
+            func_me = ""
             if (ifdecompdebug) then
-               cmode = -3
+               func = "dm-"
             endif
             if (ifmeaneddy) then
                 write(*,'(A)') "  Warning: Cannot do mean/eddy decomposition without curl of momentum equation."
@@ -289,13 +301,12 @@ module io
 
         if (ifmeaneddy) then
            if (ifmeanclm) then
-               write(*, '(A)') "Using climatology as mean."
+               write(*, '(A)') "Using section climatology as mean."
            else
                write(*, '(A)') "Using section average as mean."
            endif
         endif
         write(*, *)
-
 
         MVALUE = ieee_value(MVALUE, IEEE_QUIET_NAN)
         !print*, 'Missing value: ', MVALUE
@@ -313,7 +324,7 @@ module io
         B%nz = nzgl
 
         !-------------------------------------------
-        ! * Interpreting date for the main loop *
+        ! * Interpreting date for the input files *
         !-------------------------------------------
         if (len(trim(yrnm_clm)) > 0) then
             T%nyr = 1
@@ -396,63 +407,152 @@ module io
         !-------------------------------------------
         ! * Interpreting mean/eddy decomposition sections (of a year) *
         !-------------------------------------------
-        if (meanfreq=="m") then
-            ! nda_sec = 0
-            T%nsec = 12
+        ! if (meanfreq=="m") then
+        !     ! T%nsec = 12
+        !     ! allocate(T%seclist(T%nsec, 2))
+        !     ! allocate(T%meannm(T%nsec))
+        !     ! do isec = 1, T%nsec
+        !     !     T%seclist(isec, 1) = 1 + sum(eom(1:isec)) - eom(isec)
+        !     !     T%seclist(isec, 2) = sum(eom(1:isec))
+        !     !     write(T%meannm(isec), '(I0.2)') isec
+        !     ! enddo
+        ! ! Only month specified by mnlist will be calculated
+        !     T%nsec = size(mnlist)
+        !     allocate(T%seclist(T%nsec, 2))
+        !     allocate(T%meannm(T%nsec))
+        !     do isec = 1, T%nsec
+        !         T%seclist(isec, 1) = 1 + sum(eom(1:mnlist(isec)-1))
+        !         T%seclist(isec, 2) = sum(eom(1:mnlist(isec)))
+        !         write(T%meannm(isec), '(I0.2)') isec
+        !     enddo
+        ! elseif (meanfreq=="a") then
+        !     ! nda_sec = 365
+        !     T%nsec = 1
+        !     allocate(T%seclist(T%nsec, 2))
+        !     allocate(T%meannm(T%nsec))
+        !     T%seclist(1, 1) = 1
+        !     T%seclist(1, 2) = 365
+        !     write(T%meannm(1), '(A)') 'ann'
+        ! elseif (count(seclist_in_st/=0) /= 0 .and. all(seclist_in_st >= 0) .and. &
+        !         count(seclist_in_ed/=0) /= 0 .and. all(seclist_in_ed >= 0)) then
+        !     T%nsec = min(count(seclist_in_st/=0), count(seclist_in_ed/=0))
+        !     allocate(T%seclist(T%nsec, 2))
+        !     allocate(T%meannm(T%nsec))
+        !     do isec = 1, T%nsec
+        !         T%seclist(isec, 1) = seclist_in_st(isec)
+        !         T%seclist(isec, 2) = seclist_in_ed(isec)
+        !         write(T%meannm(isec), '(A, I0.3, A, I0.3)') 'd', T%seclist(isec, 1), '-', T%seclist(isec, 2)
+        !     enddo
+        ! elseif (seced >= secst /= 0 .and. secst > 0) then
+        !     T%nsec = 1
+        !     allocate(T%seclist(T%nsec, 2))
+        !     allocate(T%meannm(T%nsec))
+        !     T%seclist(1, 1) = secst
+        !     T%seclist(1, 2) = seced
+        !     write(T%meannm(1), '(A, I0.3, A, I0.3)') 'd', secst, '-', seced
+        ! else !
+        !     ! T%nsec = ceiling(365. / nda_sec)
+        !     ! allocate(T%seclist(T%nsec, 2))
+        !     ! allocate(T%meannm(T%nsec))
+        !     ! do isec = 1, T%nsec
+        !     !     T%seclist(isec, 1) = (isec - 1) * nda_sec + 1
+        !     !     T%seclist(isec, 2) = min(isec * nda_sec, 365)
+        !     !     write(T%meannm(isec), '(A, I0.3, A, I0.3)') 'd', T%seclist(isec, 1), '-', T%seclist(isec, 2)
+        !     ! enddo
+        ! ! If fixed number of day is specifed, min(doyslist) and max(doylist) are
+        ! !   used as lower and upper bounds.
+        !     T%nsec = (T%doylist(T%ndoy)-T%doylist(1))/nda_sec + 1
+        !     allocate(T%seclist(T%nsec, 2))
+        !     allocate(T%meannm(T%nsec))
+        !     do isec = 1, T%nsec
+        !         T%seclist(isec, 1) = (isec - 1) * nda_sec + T%doylist(1)
+        !         T%seclist(isec, 2) = min(isec * nda_sec, T%doylist(T%ndoy))
+        !         write(T%meannm(isec), '(A, I0.3, A, I0.3)') 'd', T%seclist(isec, 1), '-', T%seclist(isec, 2)
+        !     enddo
+        ! endif
+
+        ! HERE: check compatibilty between seclist and doylist
+
+        ! The main loop is through seclist when:
+        ! 1) ME on and no decomposition of nonlinear term (therefore mean momentum variables before curl)
+        ! 2) ME decomposition only (func == "")
+        ! if (index(func, "d") == 0 .and. ifmeaneddy .or. func == "") then ! ME only mode
+        ! ! if (index(func, "c") /= 0 .and. ifmeaneddy .or. func == "") then ! ME only mode
+        !   ! Future update: check if doylist and seclist match
+        !     T%nt = T%nsec
+        !     allocate(T%tlist(T%nt, 2))
+        !     T%tlist = T%seclist
+        ! else
+        !     T%nt = T%ndoy
+        !     allocate(T%tlist(T%nt, 2))
+        !     T%tlist(:, 1) = (/ (T%doylist(ida), ida = 1, T%ndoy) /)
+        !     T%tlist(:, 2) = T%tlist(:, 1)
+        ! endif
+
+        if (trim(func_me)=="") then
+            T%nsec = T%ndoy
             allocate(T%seclist(T%nsec, 2))
-            allocate(T%meannm(T%nsec))
-            do isec = 1, T%nsec
-                T%seclist(isec, 1) = 1 + sum(eom(1:isec)) - eom(isec)
-                T%seclist(isec, 2) = sum(eom(1:isec))
-                write(T%meannm(isec), '(I0.2)') isec
-            enddo
-        elseif (meanfreq=="a") then
-            ! nda_sec = 365
-            T%nsec = 1
-            allocate(T%seclist(T%nsec, 2))
-            allocate(T%meannm(T%nsec))
-            T%seclist(1, 1) = 1
-            T%seclist(1, 2) = 365
-            write(T%meannm(1), '(A)') 'ann'
-        elseif (count(seclist_in_st/=0) /= 0 .and. all(seclist_in_st >= 0) .and. &
-                count(seclist_in_ed/=0) /= 0 .and. all(seclist_in_ed >= 0)) then
-            T%nsec = min(count(seclist_in_st/=0), count(seclist_in_ed/=0))
-            allocate(T%seclist(T%nsec, 2))
-            allocate(T%meannm(T%nsec))
-            do isec = 1, T%nsec
-                T%seclist(isec, 1) = seclist_in_st(isec)
-                T%seclist(isec, 2) = seclist_in_ed(isec)
-                write(T%meannm(isec), '(A, I0.3, A, I0.3)') 'd', T%seclist(isec, 1), '-', T%seclist(isec, 1)
-            enddo
-        elseif (seced >= secst /= 0 .and. secst > 0) then
-            T%nsec = 1
-            allocate(T%seclist(T%nsec, 2))
-            allocate(T%meannm(T%nsec))
-            T%seclist(1, 1) = secst
-            T%seclist(1, 2) = seced
-            write(T%meannm(1), '(A, I0.3, A, I0.3)') 'd', secst, '-', seced
+            T%seclist(:, 1) = (/ (T%doylist(ida), ida = 1, T%ndoy) /)
+            T%seclist(:, 2) = T%seclist(:, 1)
         else
-            T%nsec = ceiling(365. / nda_sec)
-            allocate(T%seclist(T%nsec, 2))
-            allocate(T%meannm(T%nsec))
-            do isec = 1, T%nsec
-                T%seclist(isec, 1) = (isec - 1) * nda_sec + 1
-                T%seclist(isec, 2) = min(isec * nda_sec, 365)
-                write(T%meannm(isec), '(A, I0.3, A, I0.3)') 'd', T%seclist(isec, 1), '-', T%seclist(isec, 1)
-            enddo
+            if (meanfreq=="m") then
+                T%nsec = size(mnlist)
+                allocate(T%seclist(T%nsec, 2))
+                allocate(T%meannm(T%nsec))
+                do isec = 1, T%nsec
+                    T%seclist(isec, 1) = 1 + sum(eom(1:mnlist(isec)-1))
+                    T%seclist(isec, 2) = sum(eom(1:mnlist(isec)))
+                    write(T%meannm(isec), '(I0.2)') mnlist(isec)
+                enddo
+            elseif (meanfreq=="a") then
+                ! nda_sec = 365
+                T%nsec = 1
+                allocate(T%seclist(T%nsec, 2))
+                allocate(T%meannm(T%nsec))
+                T%seclist(1, 1) = 1
+                T%seclist(1, 2) = 365
+                write(T%meannm(1), '(A)') 'ann'
+            elseif (count(seclist_in_st/=0) /= 0 .and. all(seclist_in_st >= 0) .and. &
+                    count(seclist_in_ed/=0) /= 0 .and. all(seclist_in_ed >= 0)) then
+                T%nsec = min(count(seclist_in_st/=0), count(seclist_in_ed/=0))
+                allocate(T%seclist(T%nsec, 2))
+                allocate(T%meannm(T%nsec))
+                do isec = 1, T%nsec
+                    T%seclist(isec, 1) = seclist_in_st(isec)
+                    T%seclist(isec, 2) = seclist_in_ed(isec)
+                    write(T%meannm(isec), '(A, I0.3, A, I0.3)') 'd', T%seclist(isec, 1), '-', T%seclist(isec, 2)
+                enddo
+            elseif (seced >= secst /= 0 .and. secst > 0) then
+                T%nsec = 1
+                allocate(T%seclist(T%nsec, 2))
+                allocate(T%meannm(T%nsec))
+                T%seclist(1, 1) = secst
+                T%seclist(1, 2) = seced
+                write(T%meannm(1), '(A, I0.3, A, I0.3)') 'd', secst, '-', seced
+            else !
+                ! T%nsec = ceiling(365. / nda_sec)
+                ! allocate(T%seclist(T%nsec, 2))
+                ! allocate(T%meannm(T%nsec))
+                ! do isec = 1, T%nsec
+                !     T%seclist(isec, 1) = (isec - 1) * nda_sec + 1
+                !     T%seclist(isec, 2) = min(isec * nda_sec, 365)
+                !     write(T%meannm(isec), '(A, I0.3, A, I0.3)') 'd', T%seclist(isec, 1), '-', T%seclist(isec, 2)
+                ! enddo
+            ! If fixed number of day is specifed, min(doyslist) and max(doylist) are
+            !   used as lower and upper bounds.
+                T%nsec = (T%doylist(T%ndoy)-T%doylist(1))/nda_sec + 1
+                allocate(T%seclist(T%nsec, 2))
+                allocate(T%meannm(T%nsec))
+                do isec = 1, T%nsec
+                    T%seclist(isec, 1) = (isec - 1) * nda_sec + T%doylist(1)
+                    T%seclist(isec, 2) = min(isec * nda_sec, T%doylist(T%ndoy))
+                    write(T%meannm(isec), '(A, I0.3, A, I0.3)') 'd', T%seclist(isec, 1), '-', T%seclist(isec, 2)
+                enddo
+            endif
         endif
 
-        if (cmode == 0 .and. ifmeaneddy .or. cmode == -1) then
-          ! check if doylist and seclist match
-            T%nt = T%nsec
-            allocate(T%tlist(T%nt, 2))
-            T%tlist = T%seclist
-        else
-            T%nt = T%ndoy
-            allocate(T%tlist(T%nt, 2))
-            T%tlist(:, 1) = (/ (T%doylist(ida), ida = 1, T%ndoy) /)
-            T%tlist(:, 2) = T%tlist(:, 1)
-        endif
+
+        T%menm_clm = menm_clm
 
         T%yrnm_clm = yrnm_clm
         T%avnm_clm = avnm_clm
@@ -460,9 +560,6 @@ module io
         if (len(trim(fn_vor_sfx)) == 0) then
             write(fn_vor_sfx, '(A, A)') '_', trim(B%subreg)
         endif
-
-        write(fn_vorm_sfx, '(A, A)') trim(fn_vor_sfx), trim(fn_vorm_sfx)
-        write(fn_vore_sfx, '(A, A)') trim(fn_vor_sfx), trim(fn_vore_sfx)
 
         ! if (ifdecomp) then
         !     write(fn_vor_sfx, '(A, A)') trim(fn_vor_sfx), '_decomp'
@@ -513,20 +610,20 @@ module io
 
         fn_vorm%dir = fn_vorm_dir
         fn_vorm%pfx = fn_vorm_pfx
-        fn_vorm%sfx = fn_vorm_sfx
+        write(fn_vorm%sfx, '(A, A)') trim(fn_vor_sfx), trim(fn_vorm_sfx)
         fn_vorm%dlm = fn_vorm_dlm
 
-        fn_vore%dir = fn_vorm_dir
-        fn_vore%pfx = fn_vorm_pfx
-        fn_vore%sfx = fn_vorm_sfx
-        fn_vore%dlm = fn_vorm_dlm
+        fn_vore%dir = fn_vore_dir
+        fn_vore%pfx = fn_vore_pfx
+        write(fn_vore%sfx, '(A, A)') trim(fn_vor_sfx), trim(fn_vore_sfx)
+        fn_vore%dlm = fn_vore_dlm
 
         !-------------------------------------------
         ! * Print basic info *
         !-------------------------------------------
         write(*, '(A)') '-----------------------------------------------------'
         write(*, '(A, A)') "Domain name: ", trim(B%subreg)
-        write(*, '(A, I3, A, I3)') "xl: ", B%xl, " yd ", B%yd
+        write(*, '(A, I3, A, I3)') "xl: ", B%xl, " yd: ", B%yd
         write(*, '(A, I3, A, I3)') "Domain size (Nx x Ny): ", B%nx, " x ", B%ny
         write(*, *)
 
@@ -539,24 +636,33 @@ module io
         ! print*, "Month: ", mnlist
         ! print*, "Day: "  , dalist
 
-        write(*, '(A)') "List of days (of year): "
-        write(*, '(A)', advance="no") "    "
-        do ida = 1, T%ndoy
-            write(*, '(I3, A)', advance="no") T%doylist(ida), ' '
-        enddo
-        write(*, *)
+        ! write(*, '(A)') "List of days (of year): "
+        ! do ida = 1, T%ndoy
+        !     write(*, '(I3, A)', advance="no") T%doylist(ida), ' '
+        ! enddo
+        ! write(*, *)
 
+        ! write(*, '(A)') "List of average sections: "
+        ! do ida = 1, T%nsec
+        !     write(*, '(A, I3, A, I3)') "    ", T%seclist(ida, 1), ' ', T%seclist(ida, 2)
+        ! enddo
         write(*, '(A)') "List of average sections: "
+        write(*, '(A)', advance="no") "  Start: "
         do ida = 1, T%nsec
-            write(*, '(A, I3, A, I3)') "    ", T%seclist(ida, 1), ' ', T%seclist(ida, 2)
+            write(*, '(I3, A)', advance="no") T%seclist(ida, 1), ' '
+        enddo
+        write(*, *)
+        write(*, '(A)', advance="no") "  End: "
+        do ida = 1, T%nsec
+            write(*, '(I3, A)', advance="no") T%seclist(ida, 2), ' '
         enddo
         write(*, *)
 
-        write(*, '(A)') "List of actual looping list: "
-        do ida = 1, T%nt
-            write(*, '(A, I3, A, I3)') "    ", T%tlist(ida, 1), ' ', T%tlist(ida, 2)
-        enddo
-        write(*, *)
+        ! write(*, '(A)') "List of actual looping list: "
+        ! do ida = 1, T%nt
+        !     write(*, '(A, I3, A, I3)') "    ", T%tlist(ida, 1), ' ', T%tlist(ida, 2)
+        ! enddo
+        ! write(*, *)
 
         write(fmts_mom, '(A, A, A)' ) '(A20, ', trim(fmt_exp), ')'
         write(fmtm_mom, '(A, I2, A, A)') '(A20, ', B%zi_dped - B%zi_dpst + 1, trim(fmt_exp), ')'
@@ -564,14 +670,17 @@ module io
         write(fmtm_flx, '(A, I2, A, A)') '(A20, ', B%zi_dped - B%zi_dpst + 1, trim(fmt_exp), ')'
         write(fmts_vel, '(A, A, A)' ) '(A20, ', trim(fmt_flt), ')'
         write(fmtm_vel, '(A, I2, A, A)') '(A20, ', B%zi_dped - B%zi_dpst + 1, trim(fmt_flt), ')'
+        write(fmts_vor, '(A, A, A)' ) '(A20, ', trim(fmt_exp), ')'
+        write(fmtm_vor, '(A, I2, A, A)') '(A20, ', B%zi_dped - B%zi_dpst + 1, trim(fmt_exp), ')'
     endsubroutine
 
     ! Load and average momentum terms from single files
-    subroutine loadave_mom_sf(cmode, yrlist, doylist, yrnm_clm, avnm_clm, fn)
+    subroutine loadave_mom_sf(func, yrlist, doylist, yrnm_clm, avnm_clm, fn)
         use ncio, only : nc_read
         ! use popload, only : load_current_day, find_daily_file
         implicit none
-        integer, intent(in) :: cmode, yrlist(:), doylist(:)
+        character(len=*), intent(in) :: func
+        integer, intent(in) :: yrlist(:), doylist(:)
         character(len=*), intent(in) :: yrnm_clm, avnm_clm
         type(filename), intent(in) :: fn
         character :: fn_mom*300, yyyymmdd*20
@@ -595,11 +704,12 @@ module io
 
                 write(*, '(A, A)') '  Load from file: ', trim(fn_mom)
 
-                if ( abs(cmode) < 5) then
+                if (index(func, "a") /= 0 .or. index(func, "m") /= 0 .or. &
+                    index(func, "d") /= 0 .or. index(func, "c") /= 0) then
                     call nc_read(fn_mom, 'UVEL' , WORK, (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); uc = uc + WORK(:, :, :, 1) / nn
                     call nc_read(fn_mom, 'VVEL' , WORK, (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); vc = vc + WORK(:, :, :, 1) / nn
                 endif
-                if ( abs(cmode) == 0 .or. abs(cmode) == 1 .or. abs(cmode) == 2 ) then
+                if (index(func, "c") /= 0) then
                     call nc_read(fn_mom, 'ADVU'   , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); advx   = advx   + WORK(:, :, :, 1) / nn
                     call nc_read(fn_mom, 'ADVV'   , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); advy   = advy   + WORK(:, :, :, 1) / nn
                     call nc_read(fn_mom, 'GRADX'  , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); gradx  = gradx  + WORK(:, :, :, 1) / nn
@@ -610,10 +720,10 @@ module io
                     call nc_read(fn_mom, 'VDIFFV' , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); vdiffy = vdiffy + WORK(:, :, :, 1)
                     call nc_read(fn_mom, 'SSH'    , WORK2, (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny,    1, 1/)); ssh(:, :, 1) = ssh(:, :, 1) + WORK2(:, :, 1, 1) / nn
                 endif
-                if ( abs(cmode) == 1 .or. abs(cmode) == 2 .or. abs(cmode) == 3 .or. abs(cmode) == 4) then
+                if (index(func, "a") /= 0 .or. index(func, "d") /= 0) then
                     call nc_read(fn_mom, 'WVEL'   , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); wc = wc + WORK(:, :, :, 1) / nn
                 endif
-                if ( abs(cmode) == 5 ) then
+                if (index(func, "f") /= 0) then
                     call nc_read(fn_mom, 'UEU'   , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); ueu = ueu + WORK(:, :, :, 1) / nn
                     call nc_read(fn_mom, 'UEV'   , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); uev = uev + WORK(:, :, :, 1) / nn
                     call nc_read(fn_mom, 'VNU'   , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); vnu = vnu + WORK(:, :, :, 1) / nn
@@ -624,13 +734,14 @@ module io
             enddo
         enddo
 
-        if ( abs(cmode) < 5) then
+        if (index(func, "a") /= 0 .or. index(func, "m") /= 0 .or. &
+            index(func, "d") /= 0 .or. index(func, "c") /= 0) then
             where(abs(uc) > 1e10) uc = 0.
             where(abs(vc) > 1e10) vc = 0.
             write(*, fmtm_vel) 'UVEL: ', uc(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
             write(*, fmtm_vel) 'VVEL: ', vc(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         endif
-        if ( abs(cmode) == 0 .or. abs(cmode) == 1 .or. abs(cmode) == 2 ) then
+        if (index(func, "c") /= 0) then
             where(abs(advx  ) > 1e10) advx   = 0.
             where(abs(advy  ) > 1e10) advy   = 0.
             where(abs(gradx ) > 1e10) gradx  = 0.
@@ -650,11 +761,11 @@ module io
             write(*, fmtm_mom) 'VDIFFV: ', vdiffy(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
             write(*, fmts_mom) 'SSH: ', ssh(B%xi_dp, B%yi_dp, 1)
         endif
-        if ( abs(cmode) == 1 .or. abs(cmode) == 2 .or. abs(cmode) == 3 .or. abs(cmode) == 4) then
+        if (index(func, "a") /= 0 .or. index(func, "d") /= 0) then
             where(abs(wc) > 1e10) wc = 0.
             write(*, fmtm_vel) 'WVEL: ', wc(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         endif
-        if ( abs(cmode) == 5 ) then
+        if (index(func, "f") /= 0) then
             where(abs(ueu) > 1e10) ueu = 0.
             where(abs(uev) > 1e10) uev = 0.
             where(abs(vnu) > 1e10) vnu = 0.
@@ -670,12 +781,13 @@ module io
         endif
     endsubroutine
 
-    subroutine init_zetavars_mean(cmode_m)
-        integer, intent(in) :: cmode_m
+    subroutine init_zetavars_mean(func)
+        character(len=*), intent(in) :: func
         write(*, *)
         write(*, '(A)') '-----------------------------------------------------'
-        write(*, '(A)') 'Initiate mean field variables'
-        if (abs(cmode_m) == 3) then
+        write(*, '(A)') 'Initializing mean field variables'
+
+        if (index(func, "d") /= 0) then
             allocate(advu_m(B%nx, B%ny, B%nz), advv_m(B%nx, B%ny, B%nz), advw_m(B%nx, B%ny, B%nz), &
                      advVx_m(B%nx, B%ny, B%nz), advVy_m(B%nx, B%ny, B%nz), advVz_m(B%nx, B%ny, B%nz), &
                      curlmet_m(B%nx, B%ny, B%nz), err_nldecomp_m(B%nx, B%ny, B%nz))
@@ -683,41 +795,39 @@ module io
             advVx_m = 0.; advVy_m = 0.; advVz_m = 0.
             curlmet_m = 0.; err_nldecomp_m = 0.
         endif
-
-        if (abs(cmode_m) == 4) then
+        if (index(func, "f") /= 0) then
             allocate(curlnonl_m(B%nx, B%ny, B%nz))
             curlnonl_m = 0.
         endif
     endsubroutine
 
-    subroutine release_zetavars_mean(cmode_m)
-        integer, intent(in) :: cmode_m
+    subroutine release_zetavars_mean(func)
+        character(len=*), intent(in) :: func
         write(*, *)
         write(*, '(A)') '-----------------------------------------------------'
         write(*, '(A)') 'Release mean field variables'
 
-        if (abs(cmode_m) == 3) then
+        if (index(func, "d") /= 0) then
             deallocate(advu_m, advv_m, advw_m, advVx_m, advVy_m, advVz_m, curlmet_m, err_nldecomp_m)
         endif
 
-        if (abs(cmode_m) == 4) then
+        if (index(func, "a") /= 0) then
             deallocate(curlnonl_m)
         endif
     endsubroutine
 
-    subroutine load_mean_sf(cmode_m, fn_zetam)
+    subroutine load_mean_sf(func, fn_zetam)
         use ncio, only : nc_read
         ! use popload, only : load_current_day, find_daily_file
         implicit none
-        integer, intent(in) :: cmode_m
-        character(len=*), intent(in) :: fn_zetam
+        character(len=*), intent(in) :: func, fn_zetam
         real(kind=kd_r), dimension(B%nx, B%ny, B%nz, 1) :: WORK
 
         write(*, *)
         write(*, '(A)') '-----------------------------------------------------'
         write(*, '(A, A)') 'Loading mean field variables from file ', trim(fn_zetam)
 
-        if (abs(cmode_m) == 3) then
+        if (index(func, "d") /= 0) then
             call nc_read(fn_zetam, 'advu'      , WORK); advu_m         = WORK(:, :, :, 1)
             call nc_read(fn_zetam, 'advv'      , WORK); advv_m         = WORK(:, :, :, 1)
             call nc_read(fn_zetam, 'advw'      , WORK); advw_m         = WORK(:, :, :, 1)
@@ -727,27 +837,28 @@ module io
             call nc_read(fn_zetam, 'curlmet'   , WORK); curlmet_m      = WORK(:, :, :, 1)
             call nc_read(fn_zetam, 'errnldcmp' , WORK); err_nldecomp_m = WORK(:, :, :, 1)
 
-            print*, 'advu', advu_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-            print*, 'advv', advv_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-            print*, 'advw', advw_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-            print*, 'advVx', advVx_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-            print*, 'advVy', advVy_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-            print*, 'advVz', advVz_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-            print*, 'err_nldecomp', err_nldecomp_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-            print*, 'Curlmet: ', curlmet_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'advu: ', advu_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'advv: ', advv_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'advw: ', advw_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'advVx: ', advVx_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'advVy: ', advVy_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'advVz: ', advVz_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'err_nldecomp: ', err_nldecomp_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'curlmet: ', curlmet_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         endif
 
-        if (abs(cmode_m) == 4) then
+        if (index(func, "a") /= 0) then
             call nc_read(fn_zetam, 'curlnonl_m', WORK); curlnonl_m = WORK(:, :, :, 1)
-            print*, 'curlnonl_m', curlnonl_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'curlnonl_m: ', curlnonl_m(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         endif
     endsubroutine
 
     ! Load and average vorticity terms from single files
-    subroutine loadave_vor_sf(cmode, yrlist, doylist, yrnm_clm, avnm_clm, fn)
+    subroutine loadave_vor_sf(func, yrlist, doylist, yrnm_clm, avnm_clm, fn)
         use ncio, only : nc_read
         implicit none
-        integer, intent(in) :: cmode, yrlist(:), doylist(:)
+        character(len=*), intent(in) :: func
+        integer, intent(in) :: yrlist(:), doylist(:)
         character(len=*), intent(in) :: yrnm_clm, avnm_clm
         type(filename), intent(in) :: fn
         character :: fn_vor*300, yyyymmdd*20
@@ -771,7 +882,7 @@ module io
 
                 write(*, '(A, A)') '  Load from file: ', trim(fn_vor)
 
-                if (abs(cmode) == 0 .or. abs(cmode) == 1 .or. abs(cmode) == 2) then
+                if (index(func, "c") /= 0) then
                     call nc_read(fn_vor, 'curlnonl' , WORK); curlnonl      = curlnonl      + WORK(:, :, :, 1) / nn
                     call nc_read(fn_vor, 'betav'    , WORK); betav         = betav         + WORK(:, :, :, 1) / nn
                     call nc_read(fn_vor, 'stretchp' , WORK); stretchp      = stretchp      + WORK(:, :, :, 1) / nn
@@ -782,19 +893,19 @@ module io
                     call nc_read(fn_vor, 'res'      , WORK); res           = res           + WORK(:, :, :, 1) / nn
                 endif
 
-                if (abs(cmode) == 1) then
-                    ! call nc_read(fn_vor, 'curlnonl_m' , WORK); curlnonlc     = curlnonlc     + WORK(:, :, :, 1) / nn
-                endif
+                ! if (abs(cmode) == 1) then
+                !     ! call nc_read(fn_vor, 'curlnonl_m' , WORK); curlnonlc     = curlnonlc     + WORK(:, :, :, 1) / nn
+                ! endif
+                !
+                ! if (abs(cmode) == 1 .or. (abs(cmode) == 2 .and. yrnm_clm /= "")) then
+                !       ! call nc_read(fn_vor, 'curlnonl_m' , WORK); curlnonlc     = curlnonlc     + WORK(:, :, :, 1) / nn
+                ! endif
+                !
+                ! if (abs(cmode) == 2 .and. yrnm_clm == "") then
+                !     call nc_read(fn_vor, 'errnlsub' , WORK); err_nlsub     = err_nlsub     + WORK(:, :, :, 1) / nn
+                ! endif
 
-                if (abs(cmode) == 1 .or. (abs(cmode) == 2 .and. yrnm_clm /= "")) then
-                      ! call nc_read(fn_vor, 'curlnonl_m' , WORK); curlnonlc     = curlnonlc     + WORK(:, :, :, 1) / nn
-                endif
-
-                if (abs(cmode) == 2 .and. yrnm_clm == "") then
-                    call nc_read(fn_vor, 'errnlsub' , WORK); err_nlsub     = err_nlsub     + WORK(:, :, :, 1) / nn
-                endif
-
-                if (abs(cmode) == 2 .or. abs(cmode) == 3) then
+                if (index(func, "d") /= 0) then
                     call nc_read(fn_vor, 'advu'     , WORK); advu         = advu         + WORK(:, :, :, 1) / nn
                     call nc_read(fn_vor, 'advv'     , WORK); advv         = advv         + WORK(:, :, :, 1) / nn
                     call nc_read(fn_vor, 'advw'     , WORK); advw         = advw         + WORK(:, :, :, 1) / nn
@@ -806,6 +917,28 @@ module io
                 endif
             enddo
         enddo
+
+        if (index(func, "c") /= 0) then
+            write(*, fmtm_vor) 'curlnonl: ' , curlnonl (B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'betav: '    , betav    (B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'stretchp: ' , stretchp (B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'errcor: '   , err_cor  (B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'curlpgrad: ', curlpgrad(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'curlhdiff: ', curlhdiff(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'curlvdiff: ', curlvdiff(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'res: '      , res      (B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        endif
+
+        if (index(func, "d") /= 0) then
+            write(*, fmtm_vor) 'advu: ', advu(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'advv: ', advv(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'advw: ', advw(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'advVx: ', advVx(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'advVy: ', advVy(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'advVz: ', advVz(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'curlmet: ', curlmet(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'errnldcmp: ', err_nldecomp(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        endif
     endsubroutine
 
     ! Get yyyymmdd from year and doy.
@@ -858,32 +991,31 @@ module io
         dd = idoy - sum(eom(1:mm)) + eom(mm)
     endsubroutine
 
-    subroutine output_sf(cmode, fn_zeta, fn_error)
+    subroutine output_sf(func, fn_zeta, fn_error)
         implicit none
-        integer, intent(in) :: cmode
-        character(len=*), intent(in) :: fn_zeta, fn_error
+        character(len=*), intent(in) :: func, fn_zeta, fn_error
         integer :: ncid_zeta, ncid_error
         type(nc_varid) :: varids
 
-        call create_output(cmode, fn_zeta, fn_error, ncid_zeta, ncid_error, varids)
-        call write_output(cmode, ncid_zeta, ncid_error, varids)
-        call close_output(cmode, ncid_zeta, ncid_error)
+        call create_output(func, fn_zeta, fn_error, ncid_zeta, ncid_error, varids)
+        call write_output(func, ncid_zeta, ncid_error, varids)
+        call close_output(func, ncid_zeta, ncid_error)
     endsubroutine
 
-    subroutine output_me(cmode_m, fn_me)
+    subroutine output_me(func_m, fn_me)
         use netcdf
         implicit none
-        integer, intent(in) :: cmode_m
-        character(len = *), intent(in) :: fn_me
+        character(len = *), intent(in) :: func_m, fn_me
         integer :: ncid, stat_create, stat_defdim, stat_defvar, stat_putatt, stat_inqvar, &
                    stat_getvar, stat_putvar, stat_io
         integer :: dimid_lon, dimid_lat, dimid_dep, dimid_time
         integer :: varid_lon, varid_lat, varid_dep, varid_time
         type(nc_varid) :: varids
 
-        print*, '  '
-        print*, 'Creating output file ', trim(fn_me)
-        print*, '  Start netcdf define ...'
+        write(*, *)
+        write(*, '(A)') '-----------------------------------------------------'
+        write(*, '(A, A)') 'Creating output file: ', trim(fn_me)
+        write(*, '(A)') '  Start netcdf define ...'
 
         stat_create = nf90_create(trim(fn_me), cmode=or(nf90_clobber,nf90_64bit_offset), ncid=ncid)
 
@@ -958,7 +1090,7 @@ module io
         stat_putatt = nf90_put_att(ncid, varids%errcor   , "long_name", "Error from decomposing curl(-fv, fu) (rhs)")
         stat_putatt = nf90_put_att(ncid, varids%errcor   , "missing_value", MVALUE)
 
-        if (abs(cmode_m) == 3) then
+        if (index(func_m, "d") /=0) then
             stat_defvar = nf90_def_var(ncid, "errnlsub" , nc_xtype, &
               (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnlsub)
             stat_putatt = nf90_put_att(ncid, varids%errnlsub, "Units", "1/s^2")
@@ -1079,7 +1211,7 @@ module io
             stat_putatt = nf90_put_att(ncid, varids%errnldcmp, "missing_value", MVALUE)
         endif
 
-        if (abs(cmode_m) == 4) then
+        if (index(func_m, "a") /=0) then
             stat_defvar = nf90_def_var(ncid, "curlnonl_m"  ,  nc_xtype, &
               (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curlnonlc)
             stat_putatt = nf90_put_att(ncid, varids%curlnonlc, "Units", "1/s^2")
@@ -1096,7 +1228,7 @@ module io
         endif
 
         stat_create = nf90_enddef(ncid)
-        print*, "    Finished netcdf define!", stat_create
+        write(*, '(A, I1)') "  Finished netcdf define!", stat_create
 
         ! Writing cooordinates
         stat_putvar = nf90_put_var(ncid, varid_lat,  tlat , &
@@ -1105,8 +1237,8 @@ module io
            start = (/1, 1/), count = (/B%nx, B%ny/))
         stat_putvar = nf90_put_var(ncid, varid_dep,  z_t)
 
-        print*, '  '
-        print*, '  Start writing zeta eddy mean file ...'
+        write(*, *)
+        write(*, '(A)') '  Start writing zeta mean/eddy file'
         stat_putvar = nf90_put_var(ncid, varids%curlnonl  , curlnonl      , &
             start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         stat_putvar = nf90_put_var(ncid, varids%betav     , betav         , &
@@ -1124,7 +1256,7 @@ module io
         stat_putvar = nf90_put_var(ncid, varids%res       , res           , &
             start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
 
-        if (abs(cmode_m) == 3) then
+      if (index(func_m, "d") /= 0) then
             stat_putvar = nf90_put_var(ncid, varids%errnlsub  , err_nlsub     , &
                 start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
 
@@ -1163,22 +1295,23 @@ module io
                 start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         endif
 
-        if (abs(cmode_m) == 4) then
+        if (index(func_m, "a") /=0) then
             stat_putvar = nf90_put_var(ncid, varids%errnlsub  , curlnonl - curlnonl_m     , &
                 start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+print*,stat_putvar
             stat_putvar = nf90_put_var(ncid, varids%curlnonlc , curlnonl_m     , &
                 start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+print*,stat_putvar
         endif
 
         stat_io = nf90_close(ncid)
-        print*, '  Finished writing zeta mean eddy equation file ', stat_io
+        write(*, '(A, I1)') '  Finished writing zeta mean/eddy file ', stat_io
     endsubroutine
 
-    subroutine create_output(cmode, fn_zeta, fn_error, ncid_zeta, ncid_error, varids)
+    subroutine create_output(func, fn_zeta, fn_error, ncid_zeta, ncid_error, varids)
         use netcdf
         implicit none
-        integer, intent(in) :: cmode
-        character(len = *), intent(in) :: fn_zeta, fn_error
+        character(len=*), intent(in) :: func, fn_zeta, fn_error
         integer, intent(inout) :: ncid_zeta, ncid_error
         type(nc_varid), intent(inout) :: varids
         integer :: stat_create, stat_defdim, stat_defvar, stat_putatt, stat_inqvar, &
@@ -1188,7 +1321,7 @@ module io
 
         write(*, *)
         write(*, '(A)') '-----------------------------------------------------'
-        write(*, '(A)') 'Creating output file ', trim(fn_zeta)
+        write(*, '(A, A)') 'Creating output file: ', trim(fn_zeta)
         write(*, '(A)') '  Start netcdf define ...'
 
         stat_create = nf90_create(trim(fn_zeta), cmode=or(nf90_clobber,nf90_64bit_offset), ncid=ncid_zeta)
@@ -1208,7 +1341,7 @@ module io
         stat_defvar = nf90_def_var(ncid_zeta, "time" , NF90_FLOAT, dimid_time, varid_time)
 
         ! Variables
-        if (abs(cmode) == 0 .or. abs(cmode) == 1 .or. abs(cmode) == 2) then
+        if (index(func, "c") /= 0) then
             stat_defvar = nf90_def_var(ncid_zeta, "curlnonl" , nc_xtype, &
               (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curlnonl )
             stat_putatt = nf90_put_att(ncid_zeta, varids%curlnonl , "Units", "1/s^2")
@@ -1266,7 +1399,7 @@ module io
             stat_putatt = nf90_put_att(ncid_zeta, varids%errcor   , "missing_value", MVALUE)
         endif
 
-        if (abs(cmode) == 1 .or. abs(cmode) == 4) then
+        if (index(func, "a") /= 0) then
             stat_defvar = nf90_def_var(ncid_zeta, "curlnonl_m"  ,  nc_xtype, &
               (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curlnonlc)
             stat_putatt = nf90_put_att(ncid_zeta, varids%curlnonlc, "Units", "1/s^2")
@@ -1275,7 +1408,7 @@ module io
             stat_putatt = nf90_put_att(ncid_zeta, varids%curlnonlc, "missing_value", MVALUE)
         endif
 
-        if (abs(cmode) == 1 .or. (abs(cmode) == 2 .and. T%yrnm_clm /= "")) then
+        if (index(func, "e") /= 0 .and. T%yrnm_clm /= "") then
             stat_defvar = nf90_def_var(ncid_zeta, "curlnonl_e" , nc_xtype, &
               (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnlsub)
             stat_putatt = nf90_put_att(ncid_zeta, varids%errnlsub, "Units", "1/s^2")
@@ -1284,7 +1417,7 @@ module io
             stat_putatt = nf90_put_att(ncid_zeta, varids%errnlsub, "missing_value", MVALUE)
         endif
 
-        if (abs(cmode) == 2 .and. T%yrnm_clm == "") then
+        if (index(func, "e") /= 0 .and. T%yrnm_clm == "") then
             stat_defvar = nf90_def_var(ncid_zeta, "errnlsub" , nc_xtype, &
               (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnlsub)
             stat_putatt = nf90_put_att(ncid_zeta, varids%errnlsub, "Units", "1/s^2")
@@ -1293,7 +1426,7 @@ module io
             stat_putatt = nf90_put_att(ncid_zeta, varids%errnlsub, "missing_value", MVALUE)
         endif
 
-        if (abs(cmode) == 2 .or. abs(cmode) == 3) then
+        if (index(func, "d") /= 0) then
             stat_defvar = nf90_def_var(ncid_zeta, "advu"     , nc_xtype, &
               (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advu)
             stat_putatt = nf90_put_att(ncid_zeta, varids%advu, "Units", "1/s^2")
@@ -1361,9 +1494,9 @@ module io
            start = (/1, 1/), count = (/B%nx, B%ny/))
         stat_putvar = nf90_put_var(ncid_zeta, varid_dep,  z_t)
 
-        if (cmode < 0) then
-            print*, '  '
-            print*, 'Creating output error file ', trim(fn_error)
+        if (index(func, "-") /= 0) then
+            write(*, *)
+            write(*, '(A, A)') 'Creating output error file: ', trim(fn_error)
 
             stat_create = nf90_create(trim(fn_error), cmode=or(nf90_clobber,nf90_64bit_offset), ncid=ncid_error)
 
@@ -1392,7 +1525,7 @@ module io
             stat_putatt = nf90_put_att(ncid_error, varids%errnl_cha, "missing_value", MVALUE)
 
             stat_create = nf90_enddef(ncid_error)
-            print*, "    Finished netcdf define!", stat_create
+            write(*, '(A, I1)') "  Finished netcdf define: ", stat_create
 
             stat_putvar = nf90_put_var(ncid_error, varid_lat,  tlat , &
                start = (/1, 1/), count = (/B%nx, B%ny/))
@@ -1404,17 +1537,19 @@ module io
         endif
     endsubroutine
 
-    subroutine write_output(cmode, ncid_zeta, ncid_error, varids)
+    subroutine write_output(func, ncid_zeta, ncid_error, varids)
         use netcdf
         implicit none
-        integer, intent(in) :: cmode, ncid_zeta, ncid_error
+        character(len=*), intent(in) :: func
+        integer, intent(in) :: ncid_zeta, ncid_error
         type(nc_varid), intent(in) :: varids
         integer :: stat_putvar
 
-        print*, '  '
-        print*, '  Start writing zeta equation file ...'
+        write(*, *)
+        write(*, '(A)') '-----------------------------------------------------'
+        write(*, '(A)') 'Start writing zeta equation file ...'
 
-        if (abs(cmode) == 0 .or. abs(cmode) == 1 .or. abs(cmode) == 2) then
+        if (index(func, "c") /=0) then
             stat_putvar = nf90_put_var(ncid_zeta, varids%curlnonl , curlnonl , &
                 start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid_zeta, varids%betav    , betav    , &
@@ -1433,17 +1568,17 @@ module io
                 start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         endif
 
-        if (abs(cmode) == 1 .or. abs(cmode) == 4) then
+        if (index(func, "am") /=0) then
             stat_putvar = nf90_put_var(ncid_zeta, varids%curlnonlc , curladv + curlmet , &
                 start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         endif
 
-        if (abs(cmode) == 1 .or. abs(cmode) == 2) then
+        if (index(func, "e") /=0) then
             stat_putvar = nf90_put_var(ncid_zeta, varids%errnlsub , err_nlsub   , &
                 start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         endif
 
-        if (abs(cmode) == 2 .or. abs(cmode) == 3) then
+        if (index(func, "d") /=0) then
             stat_putvar = nf90_put_var(ncid_zeta, varids%advu     , advu        , &
                 start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid_zeta, varids%advv     , advv        , &
@@ -1461,31 +1596,70 @@ module io
             stat_putvar = nf90_put_var(ncid_zeta, varids%errnldcmp, err_nldecomp, &
                 start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         endif
-        print*, '  Finished writing zeta equation file '
+        write(*, '(A)') '  Finished writing'
 
-        if (cmode < 0) then
-            print*, '  '
-            print*, '  Start writing error file ...'
+        if (index(func, "-") /=0) then
+            write(*, *)
+            write(*, '(A)') 'Start writing error file'
 
             stat_putvar = nf90_put_var(ncid_error, varids%errnl_rev, rr_rev, &
                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid_error, varids%errnl_cha, rr_cha, &
                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
-            print*, '  Finished writing error file '
+            write(*, '(A)') '  Finished writing'
         endif
     endsubroutine
 
-    subroutine close_output(cmode, ncid_zeta, ncid_error)
+    subroutine close_output(func, ncid_zeta, ncid_error)
         use netcdf
         implicit none
-        integer, intent(in) :: cmode, ncid_zeta, ncid_error
+        character(len=*), intent(in) :: func
+        integer, intent(in) :: ncid_zeta, ncid_error
         integer :: stat_io
 
-        print*, '  '
-        print*, 'Closing output files ...'
+        write(*, *)
+        write(*, '(A)') 'Closing output files'
         stat_io = nf90_close(ncid_zeta)
-        if (cmode < 0) then
-          stat_io = nf90_close(ncid_error)
+        if (index(func, "-") /= 0) then
+            stat_io = nf90_close(ncid_error)
+        endif
+    endsubroutine
+
+! Check if files for mean and variables within, depending on the calculation mode, exist
+! Returns a logical variable
+    subroutine check_meanfile(func_m, fn, filestat)
+        use netcdf
+        implicit none
+        character(len=*), intent(in) :: func_m, fn
+        logical, intent(inout) :: filestat
+        integer :: iostat, ncid, varid
+        integer, dimension(:), allocatable :: varstat
+
+        filestat = .False.
+        iostat = nf90_open(trim(fn), NF90_NOWRITE, ncid)
+
+        if (iostat == nf90_noerr) then
+            if (index(func_m, 'a') /= 0) then
+                allocate(varstat(1))
+                varstat(1) = nf90_inq_varid(ncid = ncid, name = 'curlnonl_m', varid = varid)
+            endif
+            if (index(func_m, 'd') /= 0) then
+                allocate(varstat(9))
+                varstat(1) = nf90_inq_varid(ncid = ncid, name = 'advu', varid = varid)
+                varstat(2) = nf90_inq_varid(ncid = ncid, name = 'advv', varid = varid)
+                varstat(3) = nf90_inq_varid(ncid = ncid, name = 'advw', varid = varid)
+                varstat(4) = nf90_inq_varid(ncid = ncid, name = 'advu', varid = varid)
+                varstat(5) = nf90_inq_varid(ncid = ncid, name = 'advVx', varid = varid)
+                varstat(6) = nf90_inq_varid(ncid = ncid, name = 'advVy', varid = varid)
+                varstat(7) = nf90_inq_varid(ncid = ncid, name = 'advVz', varid = varid)
+                varstat(8) = nf90_inq_varid(ncid = ncid, name = 'curlmet', varid = varid)
+                varstat(9) = nf90_inq_varid(ncid = ncid, name = 'errnldcmp', varid = varid)
+            endif
+            iostat = nf90_close(ncid)
+
+            if (allocated(varstat) .and. all(varstat == nf90_noerr)) then
+                filestat = .True.
+            endif
         endif
     endsubroutine
 endmodule
