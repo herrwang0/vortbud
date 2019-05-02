@@ -65,6 +65,7 @@ daed = 31          ! [31]
 !   x goes from left (xl) to right (xr) and y goes from down (yd) to up (yu).
 !   "reg": absolute indices (in the entire globe) for region of interest
 !   "ref": absolute indices for input files (reference)
+!   No z range option is available right now
 &bnds
 B%xl_reg = 1481    ! Default values for the Arabian Sea. Check mod_params.f90 for actual values.
 B%xr_reg = 1900    !

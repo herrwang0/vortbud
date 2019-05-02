@@ -8,18 +8,17 @@ module io
                      rr_rev, rr_cha, curladvf
     implicit none
     private
-    ! public :: load_params, loadave_vars_sf, get_mmdd, get_yyyymmdd, create_outputfiles, write_outputfiles, close_outputfiles
-    ! public :: nc_varid, load_params, get_yyyymmdd, loadave_mom_sf, load_mean_sf, loadave_vor_sf, &
-    !           output_sf,
     public :: load_params, get_yyyymmdd, loadave_mom_sf, output_sf, load_mean_sf, &
               loadave_vor_sf, init_zetavars_mean, release_zetavars_mean, output_me, check_meanfile
 
     type filename
-        character(len = 300) :: fn
-        character(len = 300) :: dir
-        character(len = 100) :: pfx
-        character(len = 20 ) :: sfx
-        character(len = 1  ) :: dlm
+        ! Filename = dir + pfx + YYYY + dlm + MM + dlm + DD + sfx
+        ! YYYY + dlm + MM + dlm + DD can be overriden by wildcards.
+        character(len = 300) :: fn         ! filename
+        character(len = 300) :: dir        ! directory
+        character(len = 100) :: pfx        ! prefix
+        character(len = 20 ) :: sfx        ! suffix
+        character(len = 1  ) :: dlm        ! delimiter in dates
     endtype
 
     type timelist
@@ -27,18 +26,17 @@ module io
         character(len=9) :: yrnm_clm = ""
         ! Month+Day part of the input climatology file.
         character(len=9) :: avnm_clm = ""
-        character(len=9) :: menm_clm = ""
         ! list of years to loop
         integer, allocatable :: yrlist(:)
-        ! ! list of general time point to loop (either doylist or seclist)
-        ! integer, allocatable :: tlist(:, :)
         ! list of doy to loop
         integer, allocatable :: doylist(:)
+        ! Wildcard for the year part of mean file if ifmeanclm = T. It is used to override the default "yrst-yred".
+        character(len=9) :: menm_clm = ""
         ! list of sections for mean eddy decomposition
         integer, allocatable :: seclist(:,:)
         ! list of section names
         character(len=9), dimension(:), allocatable :: meannm
-        integer :: ndoy, nyr, nsec, nt
+        integer :: ndoy, nyr, nsec
     endtype
 
     ! netCDF handles
@@ -54,26 +52,28 @@ module io
     endtype
 
     !!--------------------------------------------------------------------------
-    ! * Calculation mode *
+    ! * Calculation modes *
     logical, public :: ifcurl = .False., ifdecomp = .False., ifdecompdebug = .False.
     logical, public :: ifmeaneddy = .False., ifmeanclm = .FALSE., ifdecomposed = .True.
 
-    !!----------------------------------------------------------------------------
+    !!--------------------------------------------------------------------------
     type(filename), public :: fn_mom, fn_vor, fn_vorm, fn_vore, fn_error
     type(timelist), public :: T
 
-    !!----------------------------------------------------------------------------
+    !!--------------------------------------------------------------------------
+    ! * Mean field variables (eddy field is the difference between these and the total) *
     real(kind=kd_r), dimension(:, :, :), allocatable, public :: &
         advu_m, advv_m, advw_m, advVx_m, advVy_m, advVz_m, curlmet_m, err_nldecomp_m, curlnonl_m
-    !!----------------------------------------------------------------------------
 
+    !!--------------------------------------------------------------------------
+    ! * Formats for screen display logs *
     character(len = 100) :: fmts_vel, fmtm_vel, fmts_mom, fmtm_mom, fmts_flx, fmtm_flx, fmts_vor, fmtm_vor
 
     contains
     subroutine load_params(func, func_m, func_me)
         use, intrinsic :: IEEE_ARITHMETIC
         implicit none
-        ! integer, intent(inout) :: cmode, cmode_m
+        ! Function mode (for mod_zeta) for the main loop, mean and eddy
         character(len=*), intent(inout) :: func, func_m, func_me
         integer :: nml_error
         integer :: iyr, imn, nmn, ida, nda, idoy, isec
@@ -105,8 +105,9 @@ module io
         ! list of days in year
         integer :: doylist_full(365) = 0
 
+        ! Wildcard for the Year part of the input climatology file.
         character(len=9) :: yrnm_clm = ""
-        ! Month+Day part of the input climatology file.
+        ! Wildcard for the Month+Day part of the input climatology file.
         character(len=9) :: avnm_clm = ""
 
         !!--------------------------------------------------------------------------
@@ -121,18 +122,18 @@ module io
         integer, dimension(365) :: seclist_in_st = 0, seclist_in_ed = 0
         integer :: secst = 0, seced = 0
         integer :: nda_sec = 365
-
+        ! Wildcard for the year part of mean file if ifmeanclm = T. It is used to override the default "yrst-yred".
         character(len = 9) :: menm_clm = ""
 
         !!--------------------------------------------------------------------------
         ! * Input file info *
-        ! Input file directory (suppose in the same directory)
+        ! Input file directory (suppose all in the same directory)
         character(len = 300) :: fn_mom_dir = "/lustre/atlas1/cli115/proj-shared/jritchie/SIO/MODEL_DATA/yelpatch60/IOC/DATA/DAT_IO_all/nday1/"
-        ! Input file prefix (before "year")
+        ! Input file prefix (before "YYYY")
         character(len = 100) :: fn_mom_pfx = "ia_top_tx0.1_v2_yel_patc_1948_intel.pop.h.nday1."
-        ! Input file suffix (after "day", or subregion)
+        ! Input file suffix (after "DD", or subregion)
         character(len = 20 ) :: fn_mom_sfx = ".IO"
-        ! Input file date delimiter (between yyyy, mm, dd)
+        ! Input file date delimiter (between YYYY, MM, DD)
         character(len = 1  ) :: fn_mom_dlm = '-'
 
         !!----------------------------------------------------------------------------
@@ -140,22 +141,23 @@ module io
         ! Vorticity output file
         character(len = 300) :: fn_vor_dir = "/lustre/atlas/proj-shared/cli115/hewang/data/"
         character(len = 100) :: fn_vor_pfx = "vort_bud_"
-        character(len = 20 ) :: fn_vor_sfx = "" ! Default is subregion
-        character(len = 1  ) :: fn_vor_dlm = "" ! Default is the same as input
+        character(len = 20 ) :: fn_vor_sfx = ""     ! Default is subregion
+        character(len = 1  ) :: fn_vor_dlm = ""     ! Default is the same as input
 
-        ! Mean/Eddy output file
-        character(len = 300) :: fn_vorm_dir = ""
-        character(len = 100) :: fn_vorm_pfx = ""
-        character(len = 20 ) :: fn_vorm_sfx = "_m"
-        character(len = 1  ) :: fn_vorm_dlm = "" ! Default is the same as input
+        ! Mean/Eddy output files
+        character(len = 300) :: fn_vorm_dir = ""    ! Default is the same as fn_vor
+        character(len = 100) :: fn_vorm_pfx = ""    ! Default is the same as fn_vor
+        character(len = 20 ) :: fn_vorm_sfx = "_m"  ! Default is fn_vor_sfx + _m
+        character(len = 1  ) :: fn_vorm_dlm = ""    ! Default is the same as input
 
-        character(len = 300) :: fn_vore_dir = ""
-        character(len = 100) :: fn_vore_pfx = ""
-        character(len = 20 ) :: fn_vore_sfx = "_me"
-        character(len = 1  ) :: fn_vore_dlm = "" ! Default is the same as input
+        character(len = 300) :: fn_vore_dir = ""    ! Default is the same as fn_vor
+        character(len = 100) :: fn_vore_pfx = ""    ! Default is the same as fn_vor
+        character(len = 20 ) :: fn_vore_sfx = "_me" ! Default is fn_vor_sfx + _me
+        character(len = 1  ) :: fn_vore_dlm = ""    ! Default is the same as input
 
         namelist /calcmode/ ifcurl, ifdecomp, ifdecompdebug
-        namelist /memode/ ifmeaneddy, ifmeanclm, ifdecomposed, menm_clm, meanfreq, nda_sec, seclist_in_st, seclist_in_ed, secst, seced
+        namelist /memode/ ifmeaneddy, ifmeanclm, ifdecomposed, menm_clm, &
+                          meanfreq, nda_sec, seclist_in_st, seclist_in_ed, secst, seced
         namelist /time/ yrst, yred, mnst, mned, dast, daed, &
                         yrnm_clm, avnm_clm, yrlist_in, mnlist_in, dalist_in
         namelist /bnds/ B
@@ -188,10 +190,14 @@ module io
         ! * Interpreting calculation mode *
         !-------------------------------------------
         write(*, '(A)') '-----------------------------------------------------'
-        write(*, '(A)') "Calculation options:"
+        write(*, '(A)') "Calculation options from user:"
         write(*, '(A40, L)'), "Curl of momentum equation? ", ifcurl
         write(*, '(A40, L)'), "Decomposition of the nonlinear term? ", ifdecomp
         write(*, '(A40, L)'), "Mean/Eddy decomposition? ", ifmeaneddy
+        if (ifmeaneddy) then
+            write(*, '(A40, L)'), "  with full decomposition for nonlinear term? ", ifdecomposed
+            write(*, '(A40, L)'), "  use climatology as mean? ", ifmeanclm
+        endif
         write(*, *)
 
         if (.not. ifcurl .and. .not. ifdecomp .and. .not. ifmeaneddy) then
@@ -199,62 +205,55 @@ module io
             stop
         endif
 
+        !-------------------------------------------
+        ! * Translating "if" options into func, func_m, func_me *
+        !-------------------------------------------
         write(*, '(A)') '-----------------------------------------------------'
         if (yrnm_clm /= "") then
             write(*, '(4A)') "yrnm_clm = ", trim(yrnm_clm), ". Input files are climatology averaged over ", trim(yrnm_clm)
             write(*, *)
             func_m = ""
             func_me = ""
-
             if (ifmeaneddy .and. .not. ifmeanclm) then
                 write(*, '(A)') "  Warning: input files are climatology and 'ifmeanclm' is by definiation turned on for mean/eddy decomposition."
                 write(*, *)
                 ifmeanclm = .True.
             endif
-
             if     (      ifcurl .and. .not. ifdecomp .and. .not. ifmeaneddy) then
                 write(*, '(A)') 'Curl of momentum equation for each input file'
-                write(*, '(A)') '  (function mode = "c")'
                 func = "c"
             elseif (      ifcurl .and. .not. ifdecomp .and.       ifmeaneddy) then
                 write(*, '(A)') 'Curl of momentum equation and mean/eddy decomposition for the nonlinear term'
-                write(*, '(A)') '  (function mode = "came")'
+                write(*, '(A)') '  ERR_nlsub == curlnonl_eddy'
                 func = "came"
             elseif (      ifcurl .and.       ifdecomp                       ) then
-                write(*, '(A)') 'Curl of momentum equation and full decomposition of the nonlinear term'
-                write(*, '(A)') '  (function mode =  "cdme")'
+                write(*, '(A)') 'Curl of momentum equation and full decomposition for the nonlinear term'
                 write(*, '(A)') '  ERR_nlsub == curlnonl_eddy and only mean terms have decompostion.'
                 func = "cdme"
                 if (ifdecompdebug) then
                    func = "cdme-"
                 endif
                 if (.not. ifmeaneddy) then
-                    write(*,'(A)') "  Note: ifmeaneddy is set to False. A decomposition of nonlinear terms of the climatology &
+                    write(*,'(A)') "  Note: 'ifmeaneddy' was set to False. A decomposition of nonlinear terms of the climatology &
                              is essentially equivalent to a mean/eddy decomposition."
-                    ifmeaneddy = .True.
                 endif
-            ! elseif (.not. ifcurl .and. .not. ifdecomp .and.       ifmeaneddy) then
-            !     write(*, '(A)') "Cannot do mean/eddy decomposition only! Exit."
             elseif (.not. ifcurl .and. .not. ifdecomp) then
-                write(*, '(A)') "Both 'ifcurl' and 'ifdecomp' are set to False. Nothing will be done for climatology files. Exit."
+                write(*, '(A)') "Both 'ifcurl' and 'ifdecomp' are set to False. Cannot do mean/eddy decomposition for climatology! Exit."
                 stop
             endif
         else
             if     (      ifcurl .and. .not. ifdecomp .and. .not. ifmeaneddy) then
                 write(*, '(A)') 'Curl of momentum equation for each input file'
-                write(*, '(A)') '  (function mode = "c")'
                 func = "c"
                 func_m = ""
                 func_me = ""
             elseif (      ifcurl .and. .not. ifdecomp .and.       ifmeaneddy) then
                 write(*, '(A)') 'Curl of momentum equation and mean/eddy decomposition for the nonlinear term'
-                write(*, '(A)') '  (function mode = "c" and function mode = "am")'
                 func = "c"
                 func_m = "am"
                 func_me = func
             elseif (      ifcurl .and.       ifdecomp                       ) then
                 write(*, '(A)') 'Curl of momentum equation and decomposition of the nonlinear term'
-                write(*, '(A)') '  (function mode = "cdme")'
                 func = "cdme"
                 if (ifdecompdebug) then
                    func = "cdme-"
@@ -285,7 +284,6 @@ module io
         endif
         if (.not. ifcurl .and. ifdecomp ) then
             write(*, '(A)'), 'Decomposition of the nonlinear term only.'
-            write(*, '(A)'), '  (function mode = "dm")'
             func = "dm"
             func_m = ""
             func_me = ""
@@ -294,20 +292,17 @@ module io
             endif
             if (ifmeaneddy) then
                 write(*,'(A)') "  Warning: Cannot do mean/eddy decomposition without curl of momentum equation."
-                ifmeaneddy = .False.
             endif
         endif
         write(*, *)
-
-        if (ifmeaneddy) then
-           if (ifmeanclm) then
-               write(*, '(A)') "Using section climatology as mean."
-           else
-               write(*, '(A)') "Using section average as mean."
-           endif
-        endif
+        write(*, '(A, A)') '  func    = ', trim(func)
+        write(*, '(A, A)') '  func_m  = ', trim(func_m)
+        write(*, '(A, A)') '  func_me = ', trim(func_me)
         write(*, *)
 
+        !-------------------------------------------
+        ! * Set missing value *
+        !-------------------------------------------
         MVALUE = ieee_value(MVALUE, IEEE_QUIET_NAN)
         !print*, 'Missing value: ', MVALUE
 
@@ -339,7 +334,7 @@ module io
             allocate(T%yrlist(T%nyr))
             T%yrlist = (/ (iyr, iyr = yrst, yred) /)
         else
-            print*, "Input missing: either year list or yrnm_clm is needed! Aborting"
+            write(*, '(A)') "ERROR: No year information (yrlist or yrnm_clm) provided! Exit."
             stop
         endif
 
@@ -371,7 +366,9 @@ module io
             dalist = (/ (ida, ida = dast, daed) /)
         endif
 
-        ! Translate to day of year
+        !-------------------------------------------
+        !    Translate mnlist and dalist to doylist (day of year)
+        !-------------------------------------------
         ! Annual mean: doy_list = (/ 0 /)
         ! Monthly mean: doy_list = (/ -first day of the month /)
         ! Daily mean: doy_list = doy
@@ -391,104 +388,12 @@ module io
         allocate(T%doylist(T%ndoy))
         T%doylist = doylist_full(1:T%ndoy)
 
-        ! slyr  = 1
-        ! sldoy = 1
-        !
-        ! !-------------------------------------------
-        ! ! * Modified loop and average yr doy list for the special case *
-        ! !-------------------------------------------
-        ! if (yrnm_clm == "" .and. cmode == 1) then
-        !      write(yrnm_clm, '(I0.4, A, I0.4)') yrlist(1), '-', yrlist(nyr)
-        !      write(avnm_clm, '(A, I0.3, A, I0.3)') 'd', abs(doylist(1)), '-', abs(doylist(ndoy))
-        !      slyr  = nyr
-        !      sldoy = ndoy
-        ! endif
-
         !-------------------------------------------
-        ! * Interpreting mean/eddy decomposition sections (of a year) *
+        !    Translate doylist to seclist
         !-------------------------------------------
-        ! if (meanfreq=="m") then
-        !     ! T%nsec = 12
-        !     ! allocate(T%seclist(T%nsec, 2))
-        !     ! allocate(T%meannm(T%nsec))
-        !     ! do isec = 1, T%nsec
-        !     !     T%seclist(isec, 1) = 1 + sum(eom(1:isec)) - eom(isec)
-        !     !     T%seclist(isec, 2) = sum(eom(1:isec))
-        !     !     write(T%meannm(isec), '(I0.2)') isec
-        !     ! enddo
-        ! ! Only month specified by mnlist will be calculated
-        !     T%nsec = size(mnlist)
-        !     allocate(T%seclist(T%nsec, 2))
-        !     allocate(T%meannm(T%nsec))
-        !     do isec = 1, T%nsec
-        !         T%seclist(isec, 1) = 1 + sum(eom(1:mnlist(isec)-1))
-        !         T%seclist(isec, 2) = sum(eom(1:mnlist(isec)))
-        !         write(T%meannm(isec), '(I0.2)') isec
-        !     enddo
-        ! elseif (meanfreq=="a") then
-        !     ! nda_sec = 365
-        !     T%nsec = 1
-        !     allocate(T%seclist(T%nsec, 2))
-        !     allocate(T%meannm(T%nsec))
-        !     T%seclist(1, 1) = 1
-        !     T%seclist(1, 2) = 365
-        !     write(T%meannm(1), '(A)') 'ann'
-        ! elseif (count(seclist_in_st/=0) /= 0 .and. all(seclist_in_st >= 0) .and. &
-        !         count(seclist_in_ed/=0) /= 0 .and. all(seclist_in_ed >= 0)) then
-        !     T%nsec = min(count(seclist_in_st/=0), count(seclist_in_ed/=0))
-        !     allocate(T%seclist(T%nsec, 2))
-        !     allocate(T%meannm(T%nsec))
-        !     do isec = 1, T%nsec
-        !         T%seclist(isec, 1) = seclist_in_st(isec)
-        !         T%seclist(isec, 2) = seclist_in_ed(isec)
-        !         write(T%meannm(isec), '(A, I0.3, A, I0.3)') 'd', T%seclist(isec, 1), '-', T%seclist(isec, 2)
-        !     enddo
-        ! elseif (seced >= secst /= 0 .and. secst > 0) then
-        !     T%nsec = 1
-        !     allocate(T%seclist(T%nsec, 2))
-        !     allocate(T%meannm(T%nsec))
-        !     T%seclist(1, 1) = secst
-        !     T%seclist(1, 2) = seced
-        !     write(T%meannm(1), '(A, I0.3, A, I0.3)') 'd', secst, '-', seced
-        ! else !
-        !     ! T%nsec = ceiling(365. / nda_sec)
-        !     ! allocate(T%seclist(T%nsec, 2))
-        !     ! allocate(T%meannm(T%nsec))
-        !     ! do isec = 1, T%nsec
-        !     !     T%seclist(isec, 1) = (isec - 1) * nda_sec + 1
-        !     !     T%seclist(isec, 2) = min(isec * nda_sec, 365)
-        !     !     write(T%meannm(isec), '(A, I0.3, A, I0.3)') 'd', T%seclist(isec, 1), '-', T%seclist(isec, 2)
-        !     ! enddo
-        ! ! If fixed number of day is specifed, min(doyslist) and max(doylist) are
-        ! !   used as lower and upper bounds.
-        !     T%nsec = (T%doylist(T%ndoy)-T%doylist(1))/nda_sec + 1
-        !     allocate(T%seclist(T%nsec, 2))
-        !     allocate(T%meannm(T%nsec))
-        !     do isec = 1, T%nsec
-        !         T%seclist(isec, 1) = (isec - 1) * nda_sec + T%doylist(1)
-        !         T%seclist(isec, 2) = min(isec * nda_sec, T%doylist(T%ndoy))
-        !         write(T%meannm(isec), '(A, I0.3, A, I0.3)') 'd', T%seclist(isec, 1), '-', T%seclist(isec, 2)
-        !     enddo
-        ! endif
-
-        ! HERE: check compatibilty between seclist and doylist
-
-        ! The main loop is through seclist when:
-        ! 1) ME on and no decomposition of nonlinear term (therefore mean momentum variables before curl)
-        ! 2) ME decomposition only (func == "")
-        ! if (index(func, "d") == 0 .and. ifmeaneddy .or. func == "") then ! ME only mode
-        ! ! if (index(func, "c") /= 0 .and. ifmeaneddy .or. func == "") then ! ME only mode
-        !   ! Future update: check if doylist and seclist match
-        !     T%nt = T%nsec
-        !     allocate(T%tlist(T%nt, 2))
-        !     T%tlist = T%seclist
-        ! else
-        !     T%nt = T%ndoy
-        !     allocate(T%tlist(T%nt, 2))
-        !     T%tlist(:, 1) = (/ (T%doylist(ida), ida = 1, T%ndoy) /)
-        !     T%tlist(:, 2) = T%tlist(:, 1)
-        ! endif
-
+        ! The main loop is through doylist, which is further devided into "sec" (sections).
+        ! When mean/eddy decomposition is turned on, secs are based on the frequency/period。
+        ! A sanity check will be needed to compare doylist and sections.
         if (trim(func_me)=="") then
             T%nsec = T%ndoy
             allocate(T%seclist(T%nsec, 2))
@@ -505,7 +410,6 @@ module io
                     write(T%meannm(isec), '(I0.2)') mnlist(isec)
                 enddo
             elseif (meanfreq=="a") then
-                ! nda_sec = 365
                 T%nsec = 1
                 allocate(T%seclist(T%nsec, 2))
                 allocate(T%meannm(T%nsec))
@@ -530,14 +434,6 @@ module io
                 T%seclist(1, 2) = seced
                 write(T%meannm(1), '(A, I0.3, A, I0.3)') 'd', secst, '-', seced
             else !
-                ! T%nsec = ceiling(365. / nda_sec)
-                ! allocate(T%seclist(T%nsec, 2))
-                ! allocate(T%meannm(T%nsec))
-                ! do isec = 1, T%nsec
-                !     T%seclist(isec, 1) = (isec - 1) * nda_sec + 1
-                !     T%seclist(isec, 2) = min(isec * nda_sec, 365)
-                !     write(T%meannm(isec), '(A, I0.3, A, I0.3)') 'd', T%seclist(isec, 1), '-', T%seclist(isec, 2)
-                ! enddo
             ! If fixed number of day is specifed, min(doyslist) and max(doylist) are
             !   used as lower and upper bounds.
                 T%nsec = (T%doylist(T%ndoy)-T%doylist(1))/nda_sec + 1
@@ -546,54 +442,50 @@ module io
                 do isec = 1, T%nsec
                     T%seclist(isec, 1) = (isec - 1) * nda_sec + T%doylist(1)
                     T%seclist(isec, 2) = min(isec * nda_sec, T%doylist(T%ndoy))
-                    write(T%meannm(isec), '(A, I0.3, A, I0.3)') 'd', T%seclist(isec, 1), '-', T%seclist(isec, 2)
+                    write(T%meannm(isec), '(A, I0.3, A, I0.3)')
+                          'd', T%seclist(isec, 1), '-', T%seclist(isec, 2)
                 enddo
             endif
         endif
 
-
-        T%menm_clm = menm_clm
-
         T%yrnm_clm = yrnm_clm
         T%avnm_clm = avnm_clm
+        T%menm_clm = menm_clm
 
+        !-------------------------------------------
+        !  * Constructing filenames
+        !-------------------------------------------
+        !
         if (len(trim(fn_vor_sfx)) == 0) then
             write(fn_vor_sfx, '(A, A)') '_', trim(B%subreg)
         endif
 
         ! if (ifdecomp) then
         !     write(fn_vor_sfx, '(A, A)') trim(fn_vor_sfx), '_decomp'
-        ! endif
-        !
-        ! if (ifdecomp .and. ifmeaneddy) then
-        !     write(fn_vorm_sfx, '(A, A)') trim(fn_vorm_sfx), '_decomp'
-        !     write(fn_vore_sfx, '(A, A)') trim(fn_vore_sfx), '_decomp'
+        !     if (ifmeaneddy) then
+        !         write(fn_vorm_sfx, '(A, A)') trim(fn_vorm_sfx), '_decomp'
+        !         write(fn_vore_sfx, '(A, A)') trim(fn_vore_sfx), '_decomp'
+        !     endif
         ! endif
 
         if (len(trim(fn_vor_dlm)) == 0) then
             write(fn_vor_dlm, '(A)') trim(fn_mom_dlm)
         endif
-
         if (len(trim(fn_vorm_dlm)) == 0) then
             write(fn_vorm_dlm, '(A)') trim(fn_mom_dlm)
         endif
-
         if (len(trim(fn_vore_dlm)) == 0) then
             write(fn_vore_dlm, '(A)') trim(fn_mom_dlm)
         endif
-
         if (len(trim(fn_vorm_dir)) == 0) then
             write(fn_vorm_dir, '(A)') trim(fn_vor_dir)
         endif
-
         if (len(trim(fn_vore_dir)) == 0) then
             write(fn_vore_dir, '(A)') trim(fn_vor_dir)
         endif
-
         if (len(trim(fn_vorm_pfx)) == 0) then
             write(fn_vorm_pfx, '(A)') trim(fn_vor_pfx)
         endif
-
         if (len(trim(fn_vore_pfx)) == 0) then
             write(fn_vore_pfx, '(A)') trim(fn_vor_pfx)
         endif
@@ -619,6 +511,18 @@ module io
         fn_vore%dlm = fn_vore_dlm
 
         !-------------------------------------------
+        ! * Display format *
+        !-------------------------------------------
+        write(fmts_mom, '(A, A, A)' ) '(A20, ', trim(fmt_exp), ')'
+        write(fmtm_mom, '(A, I2, A, A)') '(A20, ', B%zi_dped - B%zi_dpst + 1, trim(fmt_exp), ')'
+        write(fmts_flx, '(A, A, A)' ) '(A20, ', trim(fmt_exp), ')'
+        write(fmtm_flx, '(A, I2, A, A)') '(A20, ', B%zi_dped - B%zi_dpst + 1, trim(fmt_exp), ')'
+        write(fmts_vel, '(A, A, A)' ) '(A20, ', trim(fmt_flt), ')'
+        write(fmtm_vel, '(A, I2, A, A)') '(A20, ', B%zi_dped - B%zi_dpst + 1, trim(fmt_flt), ')'
+        write(fmts_vor, '(A, A, A)' ) '(A20, ', trim(fmt_exp), ')'
+        write(fmtm_vor, '(A, I2, A, A)') '(A20, ', B%zi_dped - B%zi_dpst + 1, trim(fmt_exp), ')'
+
+        !-------------------------------------------
         ! * Print basic info *
         !-------------------------------------------
         write(*, '(A)') '-----------------------------------------------------'
@@ -633,20 +537,7 @@ module io
             write(*, '(I4, A)', advance="no") T%yrlist(iyr), ' '
         enddo
         write(*, *)
-        ! print*, "Month: ", mnlist
-        ! print*, "Day: "  , dalist
-
-        ! write(*, '(A)') "List of days (of year): "
-        ! do ida = 1, T%ndoy
-        !     write(*, '(I3, A)', advance="no") T%doylist(ida), ' '
-        ! enddo
-        ! write(*, *)
-
-        ! write(*, '(A)') "List of average sections: "
-        ! do ida = 1, T%nsec
-        !     write(*, '(A, I3, A, I3)') "    ", T%seclist(ida, 1), ' ', T%seclist(ida, 2)
-        ! enddo
-        write(*, '(A)') "List of average sections: "
+        write(*, '(A)') "List of sections: "
         write(*, '(A)', advance="no") "  Start: "
         do ida = 1, T%nsec
             write(*, '(I3, A)', advance="no") T%seclist(ida, 1), ' '
@@ -657,24 +548,9 @@ module io
             write(*, '(I3, A)', advance="no") T%seclist(ida, 2), ' '
         enddo
         write(*, *)
-
-        ! write(*, '(A)') "List of actual looping list: "
-        ! do ida = 1, T%nt
-        !     write(*, '(A, I3, A, I3)') "    ", T%tlist(ida, 1), ' ', T%tlist(ida, 2)
-        ! enddo
-        ! write(*, *)
-
-        write(fmts_mom, '(A, A, A)' ) '(A20, ', trim(fmt_exp), ')'
-        write(fmtm_mom, '(A, I2, A, A)') '(A20, ', B%zi_dped - B%zi_dpst + 1, trim(fmt_exp), ')'
-        write(fmts_flx, '(A, A, A)' ) '(A20, ', trim(fmt_exp), ')'
-        write(fmtm_flx, '(A, I2, A, A)') '(A20, ', B%zi_dped - B%zi_dpst + 1, trim(fmt_exp), ')'
-        write(fmts_vel, '(A, A, A)' ) '(A20, ', trim(fmt_flt), ')'
-        write(fmtm_vel, '(A, I2, A, A)') '(A20, ', B%zi_dped - B%zi_dpst + 1, trim(fmt_flt), ')'
-        write(fmts_vor, '(A, A, A)' ) '(A20, ', trim(fmt_exp), ')'
-        write(fmtm_vor, '(A, I2, A, A)') '(A20, ', B%zi_dped - B%zi_dpst + 1, trim(fmt_exp), ')'
     endsubroutine
 
-    ! Load and average momentum terms from single files
+    ! Load and average momentum terms from single timestep files
     subroutine loadave_mom_sf(func, yrlist, doylist, yrnm_clm, avnm_clm, fn)
         use ncio, only : nc_read
         ! use popload, only : load_current_day, find_daily_file
@@ -1298,10 +1174,8 @@ module io
         if (index(func_m, "a") /=0) then
             stat_putvar = nf90_put_var(ncid, varids%errnlsub  , curlnonl - curlnonl_m     , &
                 start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
-print*,stat_putvar
             stat_putvar = nf90_put_var(ncid, varids%curlnonlc , curlnonl_m     , &
                 start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
-print*,stat_putvar
         endif
 
         stat_io = nf90_close(ncid)
@@ -1625,8 +1499,8 @@ print*,stat_putvar
         endif
     endsubroutine
 
-! Check if files for mean and variables within, depending on the calculation mode, exist
-! Returns a logical variable
+    ! Check if files for mean exists and contains required variables depending on the calculation mode
+    ! Returns a logical variable
     subroutine check_meanfile(func_m, fn, filestat)
         use netcdf
         implicit none
