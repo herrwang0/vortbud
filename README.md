@@ -1,14 +1,12 @@
-Vorticity decomposition for 0.1deg POP
-make produces two executables
-Run zeta.x to calculate vorticity decomposition for each input file
-Run zeta_meaneddy.x to decompose mean eddy in the nonlinear term
+Vorticity budget for 0.1deg POP
 
-v4.2
-1. Curl operator is reversed to "zcurl_dz", in which dz is taken into consideration.
-2. Add subroutine "find_daily_file" in mod_popload.f90. 
+Quick start:
+Edit environment variables in makefile accordingly
+Compile and get zeta.x
+Generate an input file "input.nml" using the sample "sample_input.nml"
+Run zeta.x
 
-v4.1
-Algorithm
-The vertical vorticity equation now applies the full flux form, in that the stretching and tilting (twisting) terms by the relative vorticity are expressed as fluxes (as in ...).
+Algorithm:
+The vertical vorticity equation now applies the full flux form, in that the stretching and tilting (twisting) terms by the relative vorticity are expressed as fluxes (as in Vallis (2006) p.167)
 Additional terms added (and substracted) to merge the non-zero divergence into the twisting terms.
 The only residuals from decomposing the nonlinear term come from reversing the operators and applying the chain rule.

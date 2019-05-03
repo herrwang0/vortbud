@@ -1,7 +1,7 @@
 all: zetaeq
 obj = mod_params.o mod_zeta.o mod_popfun.o mod_ncio.o mod_derives.o
 f90c = ifort
-flag = -I$(NETCDF_DIR)/include -lnetcdff
+flag = -I$(NETCDF_DIR)/include -lnetcdff -lnetcdf
 #flag = -L/Users/hewang/Library/netcdf/lib -lnetcdff  -I/Users/hewang/Library/netcdf/include
 
 zetaeq: zetaeq.x

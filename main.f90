@@ -75,7 +75,7 @@ Program main
                     call init_zetavars_output(func = func)
                     ! Loading (and average) variable fields from input files
                     call loadave_mom_sf(func, T%yrlist(iyr:iyr+1-1), &
-                                         (/ (ida, ida = it, T%seclist(isec,1)+slsec-1) /), &
+                                         (/ (ida, ida = it, it+slsec-1) /), &
                                          T%yrnm_clm, T%avnm_clm, fn_mom)
                     ! Calculation
                     call calc_zeta(func = func)

@@ -442,7 +442,7 @@ module io
                 do isec = 1, T%nsec
                     T%seclist(isec, 1) = (isec - 1) * nda_sec + T%doylist(1)
                     T%seclist(isec, 2) = min(isec * nda_sec, T%doylist(T%ndoy))
-                    write(T%meannm(isec), '(A, I0.3, A, I0.3)')
+                    write(T%meannm(isec), '(A, I0.3, A, I0.3)') &
                           'd', T%seclist(isec, 1), '-', T%seclist(isec, 2)
                 enddo
             endif

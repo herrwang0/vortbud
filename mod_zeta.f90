@@ -406,6 +406,7 @@ module zeta
         write(*, *)
         write(*, '(A)') '    Verify decomposition of curl(-fu, fv) ...'
         do iz = B%zi_dpst, B%zi_dped
+            write(*, '(A, I02)') '      iz = ',  iz
             write(*, fmts_vor) 'Curlcor: ', curlcor  (B%xi_dp, B%yi_dp, iz)
             write(*, fmts_vor) 'bv + -fdwdz: ', betav(B%xi_dp, B%yi_dp, iz) + stretchp(B%xi_dp, B%yi_dp, iz)
             write(*, fmts_vor) 'errcor: ' , err_cor(B%xi_dp, B%yi_dp, iz)
@@ -892,6 +893,7 @@ module zeta
             if (allocated(advu)) then
                 total = advu(B%xi_dp, B%yi_dp, iz) + advv(B%xi_dp, B%yi_dp, iz) + advw(B%xi_dp, B%yi_dp, iz) + &
                         advVx(B%xi_dp, B%yi_dp, iz) + advVy(B%xi_dp, B%yi_dp, iz) + advVz(B%xi_dp, B%yi_dp, iz)
+                write(*, '(A, I02)') '      iz = ',  iz
                 write(*, fmts_vor) 'All components: ',  total
                 write(*, fmts_vor) 'All errors: ', err_nldecomp(B%xi_dp, B%yi_dp, iz)
                 if (allocated(curladv)) then
