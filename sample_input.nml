@@ -73,7 +73,7 @@ B%yd_reg = 1082    !
 B%yu_reg = 1463    !
 B%subreg = "ase"   ! ["sc"] Name for the subregion. Also the default suffix for output files.
 B%xl_ref = 1422    ! [1422] Default values are for the Arabian Sea files
-B%xr_ref = 2150    ! [1422]
+B%xr_ref = 2150    ! [2150]
 B%yd_ref = 978     ! [978]
 B%yu_ref = 1510    ! [1510]
 

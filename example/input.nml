@@ -1,0 +1,49 @@
+&calcmode
+ifcurl        = T
+ifdecomp      = T
+/
+
+&memode
+ifmeaneddy   = F 
+/
+
+&time
+yrlist_in = 2009
+mnlist_in = 01
+dalist_in = 01
+/
+
+&bnds
+B%xl_reg = 1723 
+B%xr_reg = 1752
+B%yd_reg = 1239
+B%yu_reg = 1258
+B%subreg = "as"
+B%xi_dp = 10
+B%yi_dp = 10
+B%zi_dpst = 16
+B%zi_dped = 23
+B%ti_dp = 10
+B%xl_ref = 1723
+B%xr_ref = 1752
+B%yd_ref = 1239
+B%yu_ref = 1258
+/
+
+&grid_files
+fngrid%grid = "/ccs/home/hewang/pop0_1/ocn_static_grid.nc"
+fngrid%dz = "/ccs/home/hewang/pop0_1/ocn_static_dz.nc"
+fngrid%cons = "/ccs/home/hewang/pop0_1/ocn_constant.nc"
+/
+
+&input_files
+fn_mom_dir = "./example/"
+fn_mom_pfx = "momentum_"
+fn_mom_sfx = "_as"
+fn_mom_dlm = "-"
+/
+
+&output_files
+fn_vor_dir = "./example/"
+fn_vor_pfx = "vorticity_"
+/

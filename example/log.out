@@ -1,0 +1,245 @@
+-----------------------------------------------------
+            input <calcmode>:            0
+              input <memode>:            0
+                input <time>:            0
+                input <bnds>:            0
+                input <grid>:            0
+               input <input>:            0
+              input <output>:            0
+ 
+-----------------------------------------------------
+Calculation options from user:
+             Curl of momentum equation?  T
+   Decomposition of the nonlinear term?  T
+               Mean/Eddy decomposition?  F
+ 
+-----------------------------------------------------
+Curl of momentum equation and decomposition of the nonlinear term
+ 
+  func    = cdme
+  func_m  = 
+  func_me = 
+ 
+-----------------------------------------------------
+Domain name: as
+xl:   1 yd:   1
+Domain size (Nx x Ny):  30 x  20
+ 
+-----------------------------------------------------
+List of years: 2009 
+List of sections: 
+  Start:   1 
+  End:   1 
+func = cdme      
+func_m =           
+func_me =           
+ 
+-----------------------------------------------------
+Loading grid info from /ccs/home/hewang/pop0_1/ocn_static_grid.nc
+  and /ccs/home/hewang/pop0_1/ocn_constant.nc
+  and /ccs/home/hewang/pop0_1/ocn_static_dz.nc
+ 
+ Calculating weight functions for decomposing nonlinear term
+  Loading grid info from /ccs/home/hewang/pop0_1/ocn_static_grid.nc
+  and /ccs/home/hewang/pop0_1/ocn_static_dz.nc
+-----------------------------------------------------
+Start the main loop
+ 
+-----------------------------------------------------
+Initializing input variables
+ 
+-----------------------------------------------------
+Initializing output variables
+ 
+-----------------------------------------------------
+Loading and averaing variables (velocity, mom. terms) from input files over   1 day(s)
+  Load from file: ./example/momentum_2009-01-01_as.nc
+              UVEL:     5.2772    4.4057    3.0644    1.1837   -0.8527   -2.3677   -2.4713   -1.7363
+              VVEL:     5.6012    4.7706    3.6813    2.3675    0.8552    0.0447   -0.1255   -0.7746
+              ADVX:   0.2555E-06  0.8798E-06 -0.3134E-06 -0.2093E-05 -0.1755E-05  0.3635E-08  0.4644E-06 -0.2139E-06
+              ADVY:   0.5570E-06 -0.1889E-06 -0.1477E-05 -0.2326E-05 -0.9455E-06 -0.3150E-06 -0.8200E-06 -0.6321E-06
+             GRADX:  -0.1994E-03 -0.2097E-03 -0.2198E-03 -0.2313E-03 -0.2436E-03 -0.2589E-03 -0.2773E-03 -0.2901E-03
+             GRADY:  -0.2932E-03 -0.2675E-03 -0.2449E-03 -0.2259E-03 -0.2106E-03 -0.1988E-03 -0.1867E-03 -0.1803E-03
+            HDIFFU:   0.7134E-07  0.1535E-07 -0.6136E-07 -0.5784E-07 -0.1047E-06 -0.1388E-06 -0.1088E-06 -0.5849E-07
+            HDIFFV:  -0.1763E-06 -0.9295E-07  0.3251E-08 -0.8467E-07 -0.1271E-06 -0.1101E-07  0.4039E-07 -0.9399E-07
+            VDIFFU:   0.9039E-08 -0.6526E-08 -0.2070E-08  0.4389E-08  0.6254E-08  0.6110E-08  0.2203E-08 -0.2805E-09
+            VDIFFV:  -0.8875E-08 -0.7469E-09  0.1946E-08  0.2188E-08  0.6441E-08  0.2898E-08 -0.1179E-08  0.4715E-09
+               SSH:   0.2581E+02
+              WVEL:    -0.0048   -0.0043   -0.0058   -0.0104   -0.0152   -0.0143   -0.0061    0.0005
+ 
+-----------------------------------------------------
+Start calculating voriticity equation
+  Function code: cdme
+ 
+  ---------------------------------------------------
+  Start calculating zcurl of momentum equations
+ 
+    Calculating Coriolis terms in momentum equations
+              Corx:  -0.9369E-04 -0.7980E-04 -0.6158E-04 -0.3960E-04 -0.1430E-04 -0.7482E-06  0.2099E-05  0.1296E-04
+              Cory:   0.8827E-04  0.7369E-04  0.5126E-04  0.1980E-04 -0.1426E-04 -0.3960E-04 -0.4134E-04 -0.2904E-04
+ 
+    Calculating and combining barotropic and baroclinic pressure gradient
+            pgradx:  -0.6484E-04 -0.5449E-04 -0.4446E-04 -0.3293E-04 -0.2067E-04 -0.5334E-05  0.1307E-04  0.2583E-04
+            pgrady:   0.9455E-04  0.6882E-04  0.4624E-04  0.2724E-04  0.1191E-04  0.1833E-06 -0.1199E-04 -0.1839E-04
+ 
+    Calculating curl of nonlinear, Coriolis, pgrad, horizontal/vertical diffusion and residual terms
+          curlnonl:   0.3518E-13 -0.9963E-12 -0.1181E-11 -0.9660E-12 -0.3857E-12  0.1371E-12  0.1381E-12  0.1008E-12
+           curlcor:  -0.3161E-11  0.3545E-11  0.9796E-11  0.7620E-11 -0.1324E-11 -0.7914E-11 -0.5080E-11  0.1479E-11
+         curlpgrad:   0.1776E-16 -0.1860E-15  0.1089E-16  0.3919E-16 -0.9845E-17  0.2832E-16  0.2441E-15 -0.2428E-16
+         curlhdiff:   0.6483E-13  0.4356E-13 -0.4414E-13 -0.4095E-13  0.3292E-13  0.2548E-13 -0.1804E-13  0.3140E-13
+         curlvdiff:   0.2389E-13  0.4617E-14 -0.7246E-15 -0.1025E-14  0.3031E-15 -0.5533E-15  0.2409E-15  0.5109E-15
+               res:  -0.3037E-11  0.2597E-11  0.8571E-11  0.6612E-11 -0.1677E-11 -0.7752E-11 -0.4959E-11  0.1612E-11
+ 
+    Decomposing curl of Coriolis term
+ 
+    Verify decomposition of curl(-fu, fv) ...
+      iz = 16
+           Curlcor:  -0.3161E-11
+       bv + -fdwdz:  -0.3166E-11
+            errcor:   0.5126E-14
+              Diff:   0.1093E-25
+ 
+      iz = 17
+           Curlcor:   0.3545E-11
+       bv + -fdwdz:   0.3546E-11
+            errcor:  -0.7072E-15
+              Diff:   0.2116E-25
+ 
+      iz = 18
+           Curlcor:   0.9796E-11
+       bv + -fdwdz:   0.9799E-11
+            errcor:  -0.2293E-14
+              Diff:   0.7222E-26
+ 
+      iz = 19
+           Curlcor:   0.7620E-11
+       bv + -fdwdz:   0.7620E-11
+            errcor:   0.5971E-15
+              Diff:   0.6739E-26
+ 
+      iz = 20
+           Curlcor:  -0.1324E-11
+       bv + -fdwdz:  -0.1323E-11
+            errcor:  -0.1202E-14
+              Diff:   0.3061E-26
+ 
+      iz = 21
+           Curlcor:  -0.7914E-11
+       bv + -fdwdz:  -0.7911E-11
+            errcor:  -0.3075E-14
+              Diff:  -0.4861E-26
+ 
+      iz = 22
+           Curlcor:  -0.5080E-11
+       bv + -fdwdz:  -0.5079E-11
+            errcor:  -0.4422E-15
+              Diff:  -0.2233E-26
+ 
+      iz = 23
+           Curlcor:   0.1479E-11
+       bv + -fdwdz:   0.1478E-11
+            errcor:   0.8408E-15
+              Diff:   0.1391E-25
+ 
+ 
+  ---------------------------------------------------
+  Calculating curl of metric terms (offline)
+ 
+  ---------------------------------------------------
+  Decomposing curl of advection term
+ 
+    -------------------------------------------------
+    Calculating velocity at the walls
+               ume:     5.1138    4.1893    2.8216    1.0018   -1.0002   -2.5060   -2.5911   -1.8104
+               vme:     5.5677    4.8834    3.8470    2.3953    0.7806    0.0589    0.0040   -0.6392
+               umn:     5.5770    4.8057    3.4674    1.4051   -0.7562   -2.1919   -2.1718   -1.4796
+               vmn:     5.7083    4.7044    3.5130    2.2766    1.0425    0.4724    0.1644   -0.7556
+               umt:     5.6975    4.8415    3.7350    2.1240    0.1655   -1.6102   -2.4195   -2.1038
+               vmt:     5.8597    5.1859    4.2260    3.0244    1.6114    0.4500   -0.0404   -0.4500
+ 
+    Calculating error term from reversing operators
+            rr_rev:  -0.4086E-15  0.2295E-16  0.2104E-15  0.1639E-15  0.1275E-15  0.1060E-15  0.4327E-16 -0.6814E-16
+ 
+    Calculating decomposition
+              advu:  -0.6273E-12 -0.2403E-12 -0.3350E-14 -0.3457E-13 -0.1622E-12 -0.1828E-12 -0.1905E-12 -0.1329E-12
+              advv:   0.4226E-12 -0.3425E-12 -0.6261E-12 -0.4957E-12 -0.2760E-14  0.2751E-12  0.2954E-12  0.2176E-12
+              advw:   0.2017E-12  0.1262E-12  0.2082E-12  0.1403E-12 -0.6941E-13 -0.1722E-12 -0.1186E-12  0.1162E-13
+            rr_cha:   0.5444E-14  0.4852E-14 -0.2143E-14 -0.9448E-14 -0.5936E-14 -0.7228E-14  0.5276E-14  0.4994E-14
+             advVx:  -0.2351E-12 -0.2663E-12  0.6927E-13  0.3519E-12  0.1243E-12 -0.5560E-13 -0.3239E-13  0.1129E-13
+             advVy:   0.5531E-12 -0.7370E-14 -0.5125E-12 -0.7158E-12 -0.3290E-12  0.1960E-13  0.3765E-13  0.3479E-14
+             advVz:  -0.1979E-12 -0.1227E-12 -0.2066E-12 -0.1354E-12  0.6241E-13  0.1624E-12  0.1269E-12 -0.9170E-14
+ 
+  ---------------------------------------------------
+  Calculating error term from offline calculation of nonlinear terms
+ 
+  ---------------------------------------------------
+  Verifying offline calculations
+ 
+      iz = 16
+    All components:   0.1171E-12
+        All errors:   0.5035E-14
+           Curlmet:  -0.3533E-15
+         err_nlsub:  -0.8662E-13
+ 
+      iz = 17
+    All components:  -0.8529E-12
+        All errors:   0.4875E-14
+           Curlmet:  -0.2295E-15
+         err_nlsub:  -0.1481E-12
+ 
+      iz = 18
+    All components:  -0.1071E-11
+        All errors:  -0.1933E-14
+           Curlmet:  -0.8373E-16
+         err_nlsub:  -0.1076E-12
+ 
+      iz = 19
+    All components:  -0.8893E-12
+        All errors:  -0.9285E-14
+           Curlmet:  -0.1123E-15
+         err_nlsub:  -0.6731E-13
+ 
+      iz = 20
+    All components:  -0.3766E-12
+        All errors:  -0.5809E-14
+           Curlmet:  -0.6612E-16
+         err_nlsub:  -0.3242E-14
+ 
+      iz = 21
+    All components:   0.4657E-13
+        All errors:  -0.7122E-14
+           Curlmet:   0.1184E-15
+         err_nlsub:   0.9756E-13
+ 
+      iz = 22
+    All components:   0.1185E-12
+        All errors:   0.5320E-14
+           Curlmet:   0.1054E-15
+         err_nlsub:   0.1418E-13
+ 
+      iz = 23
+    All components:   0.1019E-12
+        All errors:   0.4926E-14
+           Curlmet:   0.4005E-16
+         err_nlsub:  -0.6082E-14
+ 
+-----------------------------------------------------
+Releasing input variables
+ 
+  ---------------------------------------------------
+  Outputing file(s): ./example/vorticity_2009-01-01_as.nc
+ 
+-----------------------------------------------------
+Creating output file: ./example/vorticity_2009-01-01_as.nc
+  Start netcdf define ...
+  Finished netcdf define: 0
+ 
+-----------------------------------------------------
+Start writing zeta equation file ...
+  Finished writing
+ 
+Closing output files
+ 
+-----------------------------------------------------
+Releasing output variables
+  Finished 2009-01-01          
