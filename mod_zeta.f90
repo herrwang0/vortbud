@@ -350,11 +350,16 @@ module zeta
         allocate(curlcor(B%nx, B%ny, B%nz))
         curlcor = 0.
         do iz = 1, B%nz
-            curlnonl (:, :, iz) = zcurl(-advx (:, :, iz), -advy (:, :, iz), dxu, dyu, tarea)
-            curlcor  (:, :, iz) = zcurl(-corx (:, :, iz), -cory (:, :, iz), dxu, dyu, tarea)
-            curlpgrad(:, :, iz) = zcurl(gradx (:, :, iz), grady (:, :, iz), dxu, dyu, tarea)
-            curlhdiff(:, :, iz) = zcurl(hdiffx(:, :, iz), hdiffy(:, :, iz), dxu, dyu, tarea)
-            curlvdiff(:, :, iz) = zcurl(vdiffx(:, :, iz), vdiffy(:, :, iz), dxu, dyu, tarea)
+            curlnonl (:, :, iz) = zcurl(-advx (:, :, iz), -advy (:, :, iz), &
+                                        dxu*dzu(:, :, iz), dyu*dzu(:, :, iz), tarea*dzt(:, :, iz))
+            curlcor  (:, :, iz) = zcurl(-corx (:, :, iz), -cory (:, :, iz), &
+                                        dxu*dzu(:, :, iz), dyu*dzu(:, :, iz), tarea*dzt(:, :, iz))
+            curlpgrad(:, :, iz) = zcurl(gradx (:, :, iz), grady (:, :, iz), &
+                                        dxu*dzu(:, :, iz), dyu*dzu(:, :, iz), tarea*dzt(:, :, iz))
+            curlhdiff(:, :, iz) = zcurl(hdiffx(:, :, iz), hdiffy(:, :, iz), &
+                                        dxu*dzu(:, :, iz), dyu*dzu(:, :, iz), tarea*dzt(:, :, iz))
+            curlvdiff(:, :, iz) = zcurl(vdiffx(:, :, iz), vdiffy(:, :, iz), &
+                                        dxu*dzu(:, :, iz), dyu*dzu(:, :, iz), tarea*dzt(:, :, iz))
         enddo
         deallocate(corx, cory)
         res = curlpgrad + curlhdiff + curlvdiff + curlnonl + curlcor
@@ -382,12 +387,12 @@ module zeta
 
         ONES = 1.
         do iz = 1, B%nz
-            u0 = u2t(uc(:,:,iz), dyu, ONES)
-            v0 = u2t(vc(:,:,iz), dxu, ONES)
+            u0 = u2t(uc(:,:,iz), dyu*dzu(:, :, iz), ONES)
+            v0 = u2t(vc(:,:,iz), dxu*dzu(:, :, iz), ONES)
 
-            call ddx_chain(fcor, fcort, uc(:,:,iz) * dyu, u0, ONES, tarea, &
+            call ddx_chain(fcor, fcort, uc(:,:,iz) * dyu*dzu(:, :, iz), u0, ONES, tarea*dzt(:, :, iz), &
                    stretchpx, betavx, WORKrrcx, WORKrr)
-            call ddy_chain(fcor, fcort, vc(:,:,iz) * dxu, v0, ONES, tarea, &
+            call ddy_chain(fcor, fcort, vc(:,:,iz) * dxu*dzu(:, :, iz), v0, ONES, tarea*dzt(:, :, iz), &
                    stretchpy, betavy, WORKrrcy, WORKrr)
 
             betav   (:, :, iz) = -(betavx + betavy)
@@ -500,7 +505,7 @@ module zeta
                 advy = 0.
             endwhere
 
-            curladv(:, :, iz) = zcurl(-advx, -advy, dxu, dyu, tarea)
+            curladv(:, :, iz) = zcurl(-advx, -advy, dxu*dzu(:,:,iz), dyu*dzu(:,:,iz), tarea*dzt(:,:,iz))
             curladv(1, :, iz) = MVALUE
             curladv(1, :, iz) = MVALUE
         enddo
@@ -557,7 +562,7 @@ module zeta
                 advy = 0.
             endwhere
 
-            curladvf(:, :, iz) = zcurl(-advx, -advy, dxu, dyu, tarea)
+            curladvf(:, :, iz) = zcurl(-advx, -advy, dxu*dzu(:,:,iz), dyu*dzu(:,:,iz), tarea*dzt(:,:,iz))
             curladvf(1, :, iz) = MVALUE
             curladvf(1, :, iz) = MVALUE
         enddo

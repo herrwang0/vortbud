@@ -593,7 +593,7 @@ module io
                     call nc_read(fn_mom, 'HDIFFU' , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); hdiffx = hdiffx + WORK(:, :, :, 1) / nn
                     call nc_read(fn_mom, 'HDIFFV' , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); hdiffy = hdiffy + WORK(:, :, :, 1) / nn
                     call nc_read(fn_mom, 'VDIFFU' , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); vdiffx = vdiffx + WORK(:, :, :, 1) / nn
-                    call nc_read(fn_mom, 'VDIFFV' , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); vdiffy = vdiffy + WORK(:, :, :, 1)
+                    call nc_read(fn_mom, 'VDIFFV' , WORK , (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny, B%nz, 1/)); vdiffy = vdiffy + WORK(:, :, :, 1) / nn
                     call nc_read(fn_mom, 'SSH'    , WORK2, (/B%xl, B%yd, 1, 1/), (/B%nx, B%ny,    1, 1/)); ssh(:, :, 1) = ssh(:, :, 1) + WORK2(:, :, 1, 1) / nn
                 endif
                 if (index(func, "a") /= 0 .or. index(func, "d") /= 0) then
