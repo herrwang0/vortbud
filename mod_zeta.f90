@@ -325,12 +325,15 @@ module zeta
         write(*, *)
         write(*, '(A)'), '    Calculating and combining barotropic and baroclinic pressure gradient'
 
+        ! Note that the last row and last column of the pressure terms (at u cells)
+        !   are set to be zero, as no SSH is available there. Therefore the values
+        !   for the values of curlpgrad in the last row and last colunm are invalid.
         pgradsfx = 0.
         pgradsfy = 0.
-        pgradsfx(1:B%nx-1, 1:B%ny-1) = -grav * ((ssh(2:B%nx,   1:B%ny-1, 1) + ssh(2:B%nx,   2:B%ny  , 1))/2 - &
-                                            (ssh(1:B%nx-1, 1:B%ny-1, 1) + ssh(1:B%nx-1, 2:B%ny  , 1))/2) / dxu(1:B%nx-1, 1:B%ny-1)
-        pgradsfy(1:B%nx-1, 1:B%ny-1) = -grav * ((ssh(1:B%nx-1, 2:B%ny  , 1) + ssh(2:B%nx,   2:B%ny  , 1))/2 - &
-                                            (ssh(1:B%nx-1, 1:B%ny-1, 1) + ssh(2:B%nx,   1:B%ny-1, 1))/2) / dyu(1:B%nx-1, 1:B%ny-1)
+        pgradsfx(1:B%nx-1, 1:B%ny-1) = ((ssh(2:B%nx,   1:B%ny-1, 1) + ssh(2:B%nx,   2:B%ny  , 1))/2 - &
+                                        (ssh(1:B%nx-1, 1:B%ny-1, 1) + ssh(1:B%nx-1, 2:B%ny  , 1))/2) / dxu(1:B%nx-1, 1:B%ny-1) * (-grav)
+        pgradsfy(1:B%nx-1, 1:B%ny-1) = ((ssh(1:B%nx-1, 2:B%ny  , 1) + ssh(2:B%nx,   2:B%ny  , 1))/2 - &
+                                        (ssh(1:B%nx-1, 1:B%ny-1, 1) + ssh(2:B%nx,   1:B%ny-1, 1))/2) / dyu(1:B%nx-1, 1:B%ny-1) * (-grav)
 
         do iz = 1, B%nz
             gradx(:, :, iz) = pgradsfx - gradx(:, :, iz)
@@ -390,9 +393,9 @@ module zeta
             u0 = u2t(uc(:,:,iz), dyu*dzu(:, :, iz), ONES)
             v0 = u2t(vc(:,:,iz), dxu*dzu(:, :, iz), ONES)
 
-            call ddx_chain(fcor, fcort, uc(:,:,iz) * dyu*dzu(:, :, iz), u0, ONES, tarea*dzt(:, :, iz), &
+            call ddx_chain(fcor, fcort, uc(:,:,iz) * dyu * dzu(:, :, iz), u0, ONES, tarea * dzt(:, :, iz), &
                    stretchpx, betavx, WORKrrcx, WORKrr)
-            call ddy_chain(fcor, fcort, vc(:,:,iz) * dxu*dzu(:, :, iz), v0, ONES, tarea*dzt(:, :, iz), &
+            call ddy_chain(fcor, fcort, vc(:,:,iz) * dxu * dzu(:, :, iz), v0, ONES, tarea * dzt(:, :, iz), &
                    stretchpy, betavy, WORKrrcy, WORKrr)
 
             betav   (:, :, iz) = -(betavx + betavy)
@@ -451,7 +454,7 @@ module zeta
             metx = uc(:, :, iz) * vc(:, :, iz) * kyu - vc(:, :, iz) * vc(:, :, iz) * kxu
             mety = uc(:, :, iz) * vc(:, :, iz) * kxu - uc(:, :, iz) * uc(:, :, iz) * kyu
 
-            curlmet(:, :, iz) = zcurl(-metx, -mety, dxu, dyu, tarea)
+            curlmet(:, :, iz) = zcurl(-metx, -mety, dxu*dzu(:, :, iz), dyu*dzu(:, :, iz), tarea*dzt(:, :, iz))
             curlmet(1, :, iz) = MVALUE
             curlmet(:, 1, iz) = MVALUE
         enddo
@@ -486,7 +489,7 @@ module zeta
                                     vn(2:B%nx  , 2:B%ny  , iz) * vmn (2:B%nx  , 2:B%ny  , iz) - &
                                     vn(2:B%nx  , 1:B%ny-1, iz) * vmn (2:B%nx  , 1:B%ny-1, iz))  &
                                   / dzu(2:B%nx, 2:B%ny, iz) / uarea(2:B%nx, 2:B%ny)            &
-                                  + wt(2:B%nx, 2:B%ny, iz) * vmt(2:B%nx, 2:B%ny, iz) / dzu(2:B%nx, 2:B%ny, iz)
+                                   + wt(2:B%nx, 2:B%ny, iz) * vmt(2:B%nx, 2:B%ny, iz) / dzu(2:B%nx, 2:B%ny, iz)
 
             if (iz < B%nz) then
                 advx(2:B%nx, 2:B%ny) = advx(2:B%nx, 2:B%ny) &
