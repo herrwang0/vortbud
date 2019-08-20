@@ -7,15 +7,13 @@ Program main
     implicit none
     integer :: iyr, it, ida, isec, slyr
     character(len = 20) :: yyyymmdd
-    integer :: cmode, cmode_m
-    character :: func
+    character(len=10):: func, func_m, func_me
     integer :: ncid, iostat
 
 !---------------------Initialization--------------------------------------------
     print*, 'Loading parameters ...'
-    call load_params(cmode, cmode_m)
-    cmode = 5
-    func = 'f'
+    call load_params(func, func_m, func_me)
+    func = 'adm'
 
     print*, 'Loading grids and constants ...'
     call load_const()
@@ -25,7 +23,7 @@ Program main
 
     call init_zetavars_input(func=func)
 
-    call loadave_mom_sf(cmode, (/2009/), (/ 351 /), T%yrnm_clm, T%avnm_clm, fn_mom)
+    call loadave_mom_sf(func, (/2009/), (/ 1 /), T%yrnm_clm, T%avnm_clm, fn_mom)
 
     call calc_zeta(func=func)
 

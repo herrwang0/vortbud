@@ -2,7 +2,7 @@ module derives
 use params, only : kd_r
 private
 public :: ddx, ddy, ddx_w, ddy_s, ddx_chain, ddy_chain, &
-          ddx_w_chain, ddy_s_chain
+          ddx_w_chain, ddy_s_chain, meanx_w, meany_s, shiftx_w, shifty_s
 
 contains
 ! southwest of v (curl_dx)
@@ -298,4 +298,68 @@ subroutine ddy_s_chainerror(u1, u10, u2, u20, wgt, r1)
     (difu1_n(:, 2:ny) * difu2_n(:, 2:ny) - difu1_s(:, 2:ny) * difu2_s(:, 2:ny)) &
      / wgt(:, 2:ny)
 endsubroutine
+
+function meanx_w(var)
+  implicit none
+  real(kind=kd_r), dimension(:, :), intent(in) :: var
+  real(kind=kd_r), dimension(:, :), allocatable :: meanx_w
+  integer :: nx, ny
+
+  nx = size(var, 1)
+  ny = size(var, 2)
+
+  allocate(meanx_w(nx, ny))
+  meanx_w = 0.
+
+  meanx_w(2:nx, :) = (var(1:nx-1, :) + var(2:nx, :)) / 2
+  return
+endfunction meanx_w
+
+function meany_s(var)
+  implicit none
+  real(kind=kd_r), dimension(:, :), intent(in) :: var
+  real(kind=kd_r), dimension(:, :), allocatable :: meany_s
+  integer :: nx, ny
+
+  nx = size(var, 1)
+  ny = size(var, 2)
+
+  allocate(meany_s(nx, ny))
+  meany_s = 0.
+
+  meany_s(:, 2:ny) = (var(:, 1:ny-1) + var(:, 2:ny)) / 2
+  return
+endfunction meany_s
+
+function shiftx_w(var)
+  implicit none
+  real(kind=kd_r), dimension(:, :), intent(in) :: var
+  real(kind=kd_r), dimension(:, :), allocatable :: shiftx_w
+  integer :: nx, ny
+
+  nx = size(var, 1)
+  ny = size(var, 2)
+
+  allocate(shiftx_w(nx, ny))
+  shiftx_w = 0.
+  shiftx_w(2:nx,:) = var(1:nx-1,:)
+  return
+endfunction shiftx_w
+
+
+function shifty_s(var)
+  implicit none
+  real(kind=kd_r), dimension(:, :), intent(in) :: var
+  real(kind=kd_r), dimension(:, :), allocatable :: shifty_s
+  integer :: nx, ny
+
+  nx = size(var, 1)
+  ny = size(var, 2)
+
+  allocate(shifty_s(nx, ny))
+  shifty_s = 0.
+  shifty_s(:,2:ny) = var(:,1:ny-1)
+  return
+endfunction shifty_s
+
 endmodule
