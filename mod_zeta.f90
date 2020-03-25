@@ -638,6 +638,13 @@ module zeta
             ! call ddx_w_chain(DueDx, DueDx0, vme0, vme00, &
             !          tarea * dzt(:,:,iz), WORKstrXx, WORKdivVx, WORKrrc, WORKrr)
 
+!(meanx_w(var_F) + meanx_w(var_B))/2 * (ddx_w(ue(:,:,iz)) - ddx_w(shiftx_w(ue(:,:,iz)))) + 
+
+
+            call ddx_w_chain(DueDx, DueDx0, vme0, vme00, &
+                     tarea * dzt(:,:,iz), WORKstrXx, WORKdivVx, WORKrrc, WORKrr)
+
+
             advu  (:, :, iz) = advu  (:, :, iz) + meany_s(u10du2_F - u10du2_B) / tarea / dzt(:,:,iz)
             advVx (:, :, iz) = advVx (:, :, iz) + meany_s(u20du1_F - u20du1_B) / tarea / dzt(:,:,iz)
             rr_cha(:, :, iz) = rr_cha(:, :, iz) + meany_s(rr_F - rr_B) / tarea / dzt(:,:,iz)
