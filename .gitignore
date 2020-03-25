@@ -1,0 +1,10 @@
+# Compiled files
+*.mod
+*.o
+*.x
+
+# Log files
+#*.out
+
+# output
+#*.nc
