@@ -635,8 +635,8 @@ module zeta
             ! Reserved for nonflux twisting terms
             u1  = meanx_w(vme(:,:,iz))/dxu
             u10 = meanx_w(meanx_w(vme(:,:,iz))/dxu)
-            u2  = uue(:,:,iz) - shiftx_w(uue(:,:,iz))
-            u20 = meanx_w(uue(:,:,iz) - shiftx_w(uue(:,:,iz)))
+            u2  = ue(:,:,iz) - shiftx_w(ue(:,:,iz))
+            u20 = meanx_w(ue(:,:,iz) - shiftx_w(ue(:,:,iz)))
 
             test1 = (u20du1_F - u20du1_B)
             test2 = u1*u2 - shift_w(u1*u2)
@@ -645,10 +645,10 @@ module zeta
             write(*, fmts_vor) 'test2: ', test2(B%xi_dp, B%yi_dp)
             write(*, fmts_vor) 'diff: ', test1(B%xi_dp, B%yi_dp) - test2(B%xi_dp, B%yi_dp)
 
-            call ddx_w_chain(meanx_w(vme(:,:,iz))/dxu, meanx_w(meanx_w(vme(:,:,iz))/dxu), var_F, meanx_w(var_F), &
-                             ONES, u10du2_F, u20du1_F, rrc, rr_F)
+            ! call ddx_w_chain(meanx_w(vme(:,:,iz))/dxu, meanx_w(meanx_w(vme(:,:,iz))/dxu), var_F, meanx_w(var_F), &
+            !                  ONES, u10du2_F, u20du1_F, rrc, rr_F)
 
-                            meany_s(u10du2) / tarea / dzt(:,:,iz)
+            !                 meany_s(u10du2) / tarea / dzt(:,:,iz)
 
                              ! DueDx0(2:nx, :) = (DueDx(1:nx-1, :) + DueDx(2:nx, :)) / 2.
             ! vme00(2:nx, :) = (vme0(1:nx-1, :) + vme0(2:nx, :)) / 2.
