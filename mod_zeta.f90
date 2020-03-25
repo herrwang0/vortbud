@@ -639,7 +639,7 @@ module zeta
             u20 = meanx_w(ue(:,:,iz) - shiftx_w(ue(:,:,iz)))
 
             test1 = (u20du1_F - u20du1_B)
-            test2 = u1*u2 - shift_w(u1*u2)
+            test2 = u1*u2 - shiftx_w(u1*u2)
 
             write(*, fmts_vor) 'test1: ', test1(B%xi_dp, B%yi_dp)
             write(*, fmts_vor) 'test2: ', test2(B%xi_dp, B%yi_dp)
@@ -658,8 +658,8 @@ module zeta
 !(meanx_w(var_F) + meanx_w(var_B))/2 * (ddx_w(ue(:,:,iz)) - ddx_w(shiftx_w(ue(:,:,iz)))) + 
 
 
-            call ddx_w_chain(DueDx, DueDx0, vme0, vme00, &
-                     tarea * dzt(:,:,iz), WORKstrXx, WORKdivVx, WORKrrc, WORKrr)
+          !  call ddx_w_chain(DueDx, DueDx0, vme0, vme00, &
+          !           tarea * dzt(:,:,iz), WORKstrXx, WORKdivVx, WORKrrc, WORKrr)
 
 
             advu  (:, :, iz) = advu  (:, :, iz) + meany_s(u10du2_F - u10du2_B) / tarea / dzt(:,:,iz)
