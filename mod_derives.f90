@@ -1,7 +1,7 @@
 module derives
   use params, only : kd_r
   private
-  public :: dd_xw, dd_ys, dd_xsw, dd_ysw, dd_xw_chain, dd_yw_chain, &
+  public :: dd_xw, dd_ys, dd_xsw, dd_ysw, dd_xw_chain, dd_ys_chain, &
             dd_xsw_chain, dd_ysw_chain, mean_xw, mean_ys, shift_xe, shift_yn
 
   contains
