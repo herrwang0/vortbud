@@ -298,7 +298,7 @@ module zeta
 
     subroutine zeta_equation()
         use popfun, only : zcurl, u2t
-        use derives, only : ddx_chain, ddy_chain
+        use derives, only : dd_xsw_chain, dd_ysw_chain
         implicit none
         real(kind=kd_r), dimension(:, :, :), allocatable :: curlcor, corx, cory
         real(kind=kd_r), dimension(B%nx, B%ny) :: pgradsfx, pgradsfy
@@ -393,9 +393,9 @@ module zeta
             u0 = u2t(uc(:,:,iz), dyu*dzu(:, :, iz), ONES)
             v0 = u2t(vc(:,:,iz), dxu*dzu(:, :, iz), ONES)
 
-            call ddx_chain(fcor, fcort, uc(:,:,iz) * dyu * dzu(:, :, iz), u0, ONES, tarea * dzt(:, :, iz), &
+            call dd_xsw_chain(fcor, fcort, uc(:,:,iz) * dyu * dzu(:, :, iz), u0, tarea * dzt(:, :, iz), &
                    stretchpx, betavx, WORKrrcx, WORKrr)
-            call ddy_chain(fcor, fcort, vc(:,:,iz) * dxu * dzu(:, :, iz), v0, ONES, tarea * dzt(:, :, iz), &
+            call dd_ysw_chain(fcor, fcort, vc(:,:,iz) * dxu * dzu(:, :, iz), v0, tarea * dzt(:, :, iz), &
                    stretchpy, betavy, WORKrrcy, WORKrr)
 
             betav   (:, :, iz) = -(betavx + betavy)
@@ -606,7 +606,6 @@ module zeta
               rr_xt, rr_yt, rr_xb, rr_yb
         real(kind=kd_r), dimension(B%nx, B%ny) :: WORK, uudxdy, vvdxdy, wwdxdy, wvdxdz, wudydz, wm
         real(kind=kd_r), dimension(B%nx, B%ny, 2) :: WORK4zx, WORK4zy
-        real(kind=kd_r), dimension(B%nx, B%ny) :: test1, test2, u1, u10, u2, u20
         integer :: iz
 
         write(*, *)
@@ -627,9 +626,9 @@ module zeta
             var_F = vme(:,:,iz)/dxu
             var_B = shiftx_w(vme(:,:,iz))/dxu
             ! var_B(1,:) = MVALUE
-            call ddx_w_chain(ue(:,:,iz), meanx_w(ue(:,:,iz)), var_F, meanx_w(var_F), &
+            call dd_xw_chain(ue(:,:,iz), meanx_w(ue(:,:,iz)), var_F, meanx_w(var_F), &
                              ONES, u10du2_F, u20du1_F, rrc, rr_F)
-            call ddx_w_chain(shiftx_w(ue(:,:,iz)), meanx_w(shiftx_w(ue(:,:,iz))), var_B, meanx_w(var_B), &
+            call dd_xw_chain(shiftx_w(ue(:,:,iz)), meanx_w(shiftx_w(ue(:,:,iz))), var_B, meanx_w(var_B), &
                              ONES, u10du2_B, u20du1_B, rrc, rr_B)
 
             ! Reserved for nonflux twisting terms
@@ -645,7 +644,8 @@ module zeta
             write(*, fmts_vor) 'test2: ', test2(B%xi_dp, B%yi_dp)
             write(*, fmts_vor) 'diff: ', test1(B%xi_dp, B%yi_dp) - test2(B%xi_dp, B%yi_dp)
 
-            ! call ddx_w_chain(meanx_w(vme(:,:,iz))/dxu, meanx_w(meanx_w(vme(:,:,iz))/dxu), var_F, meanx_w(var_F), &
+            ! call dd_xw_chain(meanx_w(vme(:,:,iz))/dxu, meanx_w(meanx_w(vme(:,:,iz))/dxu), &
+            !                  ue(:,:,iz) - shiftx_w(ue(:,:,iz)), meanx_w(ue(:,:,iz) - shiftx_w(ue(:,:,iz))), &
             !                  ONES, u10du2_F, u20du1_F, rrc, rr_F)
 
             !                 meany_s(u10du2) / tarea / dzt(:,:,iz)
@@ -670,9 +670,9 @@ module zeta
             var_F = ume(:,:,iz)/dyu
             var_B = shiftx_w(ume(:,:,iz))/dyu
             ! var_B(1,:) = MVALUE
-            call ddy_s_chain(ue(:,:,iz), meany_s(ue(:,:,iz)), var_F, meany_s(var_F), &
+            call dd_ys_chain(ue(:,:,iz), meany_s(ue(:,:,iz)), var_F, meany_s(var_F), &
                              ONES, u10du2_F, u20du1_F, rrc, rr_F)
-            call ddy_s_chain(shiftx_w(ue(:,:,iz)), meany_s(shiftx_w(ue(:,:,iz))), var_B, meany_s(var_B), &
+            call dd_ys_chain(shiftx_w(ue(:,:,iz)), meany_s(shiftx_w(ue(:,:,iz))), var_B, meany_s(var_B), &
                              ONES, u10du2_B, u20du1_B, rrc, rr_B)
 
             advu  (:, :, iz) = advu  (:, :, iz) - meanx_w(u10du2_F - u10du2_B) / tarea / dzt(:,:,iz)
@@ -685,9 +685,9 @@ module zeta
             var_F = vmn(:,:,iz)/dxu
             var_B = shifty_s(vmn(:,:,iz))/dxu
             ! var_B(:,1) = MVALUE
-            call ddx_w_chain(vn(:,:,iz), meanx_w(vn(:,:,iz)), var_F, meanx_w(var_F), &
+            call dd_xw_chain(vn(:,:,iz), meanx_w(vn(:,:,iz)), var_F, meanx_w(var_F), &
                              ONES, u10du2_F, u20du1_F, rrc, rr_F)
-            call ddx_w_chain(shifty_s(vn(:,:,iz)), meanx_w(shifty_s(vn(:,:,iz))), var_B, meanx_w(var_B), &
+            call dd_xw_chain(shifty_s(vn(:,:,iz)), meanx_w(shifty_s(vn(:,:,iz))), var_B, meanx_w(var_B), &
                              ONES, u10du2_B, u20du1_B, rrc, rr_B)
 
             advv  (:, :, iz) = advv  (:, :, iz) + meany_s(u10du2_F - u10du2_B) / tarea / dzt(:,:,iz)
@@ -699,9 +699,9 @@ module zeta
             var_F = umn(:,:,iz)/dyu
             var_B = shifty_s(umn(:,:,iz))/dyu
             ! var_B(:,1) = MVALUE
-            call ddy_s_chain(vn(:,:,iz), meany_s(vn(:,:,iz)), var_F, meany_s(var_F), &
+            call dd_ys_chain(vn(:,:,iz), meany_s(vn(:,:,iz)), var_F, meany_s(var_F), &
                              ONES, u10du2_F, u20du1_F, rrc, rr_F)
-            call ddy_s_chain(shifty_s(vn(:,:,iz)), meany_s(shifty_s(vn(:,:,iz))), var_B, meany_s(var_B), &
+            call dd_ys_chain(shifty_s(vn(:,:,iz)), meany_s(shifty_s(vn(:,:,iz))), var_B, meany_s(var_B), &
                              ONES, u10du2_B, u20du1_B, rrc, rr_B)
 
 
@@ -712,16 +712,16 @@ module zeta
           ! advw
             ! d(wv) / dx  &  d(wu) / dy
             if (iz == 1) then
-                call ddx_w_chain(wt(:,:,iz), meanx_w(wt(:,:,iz)), vmt(:,:,iz)*dyu, meanx_w(vmt(:,:,iz)*dyu), &
+                call dd_xw_chain(wt(:,:,iz), meanx_w(wt(:,:,iz)), vmt(:,:,iz)*dyu, meanx_w(vmt(:,:,iz)*dyu), &
                                  ONES, u10du2_xt, u20du1_xt, rrc, rr_xt)
-                call ddy_s_chain(wt(:,:,iz), meany_s(wt(:,:,iz)), umt(:,:,iz)*dxu, meany_s(umt(:,:,iz)*dxu), &
+                call dd_ys_chain(wt(:,:,iz), meany_s(wt(:,:,iz)), umt(:,:,iz)*dxu, meany_s(umt(:,:,iz)*dxu), &
                                  ONES, u10du2_yt, u20du1_yt, rrc, rr_yt)
             endif
 
             if (iz < B%nz) then
-                call ddx_w_chain(wt(:,:,iz+1), meanx_w(wt(:,:,iz+1)), vmt(:,:,iz+1)*dyu, meanx_w(vmt(:,:,iz+1)*dyu), &
+                call dd_xw_chain(wt(:,:,iz+1), meanx_w(wt(:,:,iz+1)), vmt(:,:,iz+1)*dyu, meanx_w(vmt(:,:,iz+1)*dyu), &
                                  ONES, u10du2_xb, u20du1_xb, rrc, rr_xb)
-                call ddy_s_chain(wt(:,:,iz+1), meany_s(wt(:,:,iz+1)), umt(:,:,iz+1)*dxu, meany_s(umt(:,:,iz+1)*dxu), &
+                call dd_ys_chain(wt(:,:,iz+1), meany_s(wt(:,:,iz+1)), umt(:,:,iz+1)*dxu, meany_s(umt(:,:,iz+1)*dxu), &
                                  ONES, u10du2_yb, u20du1_yb, rrc, rr_yb)
             else
                 u10du2_xb = 0.
@@ -744,31 +744,42 @@ module zeta
             rr_yt = rr_yb
 
           ! Add terms to compose flux of 3D voricity twisting
-            call ddx_w(0.5 * uc(:, :, iz) * uc(:, :, iz) * dzu(:, :, iz), ONES, WORK)
-            call ddy_s(WORK, tarea * dzt(:,:,iz), uudxdy)
+            ! call ddx_w(0.5 * uc(:, :, iz) * uc(:, :, iz) * dzu(:, :, iz), ONES, WORK)
+            ! call ddy_s(WORK, tarea * dzt(:,:,iz), uudxdy)
 
-            call ddx_w(0.5 * vc(:, :, iz) * vc(:, :, iz) * dzu(:, :, iz), ONES, WORK)
-            call ddy_s(WORK, tarea * dzt(:,:,iz), vvdxdy)
+            ! call ddx_w(0.5 * vc(:, :, iz) * vc(:, :, iz) * dzu(:, :, iz), ONES, WORK)
+            ! call ddy_s(WORK, tarea * dzt(:,:,iz), vvdxdy)
+            
+            uudxdy = dd_ys(dd_xw(0.5 * uc(:, :, iz) * uc(:, :, iz) * dzu(:, :, iz), ONES), &
+                           tarea * dzt(:,:,iz))
+            vvdxdy = dd_ys(dd_xw(0.5 * vc(:, :, iz) * vc(:, :, iz) * dzu(:, :, iz), ONES), &
+                           tarea * dzt(:,:,iz))
 
             if (iz == B%nz) then
                 wm = (wt(:, :, iz) + 0.) / 2
             else
                 wm = (wt(:, :, iz) + wt(:, :, iz+1)) / 2
             endif
-            call ddx_w(0.5 * wm * wm * dzu(:, :, iz), ONES, WORK)
-            call ddy_s(WORK, tarea * dzt(:,:,iz), wwdxdy)
+            ! call ddx_w(0.5 * wm * wm * dzu(:, :, iz), ONES, WORK)
+            ! call ddy_s(WORK, tarea * dzt(:,:,iz), wwdxdy)
+
+            wwdxdy = dd_ys(dd_xw(0.5 * wm * wm * dzu(:, :, iz), ONES), tarea * dzt(:,:,iz))
 
             if (iz == 1) then
-                call ddx(wt(:, :, iz) * vmt(:, :, iz), dyu, tarea, WORK4zx(:,:,1))
-                call ddy(wt(:, :, iz) * umt(:, :, iz), dxu, tarea, WORK4zy(:,:,1))
+                ! call ddx(wt(:, :, iz) * vmt(:, :, iz), dyu, tarea, WORK4zx(:,:,1))
+                ! call ddy(wt(:, :, iz) * umt(:, :, iz), dxu, tarea, WORK4zy(:,:,1))
+                call WORK4zx(:,:,1) = dd_xsw(wt(:, :, iz) * vmt(:, :, iz) * dyu, tarea)
+                call WORK4zy(:,:,1) = dd_ysw(wt(:, :, iz) * umt(:, :, iz) * dxu, tarea)
             endif
 
             if (iz == B%nz) then
                 WORK4zx(:,:,2) = 0.
                 WORK4zy(:,:,2) = 0.
             else
-                call ddx(wt(:, :, iz+1) * vmt(:, :, iz+1), dyu, tarea, WORK4zx(:,:,2))
-                call ddy(wt(:, :, iz+1) * umt(:, :, iz+1), dxu, tarea, WORK4zy(:,:,2))
+                ! call ddx(wt(:, :, iz+1) * vmt(:, :, iz+1), dyu, tarea, WORK4zx(:,:,2))
+                ! call ddy(wt(:, :, iz+1) * umt(:, :, iz+1), dxu, tarea, WORK4zy(:,:,2))
+                WORK4zx(:,:,2) = dd_xsw(wt(:, :, iz+1) * vmt(:, :, iz+1) * dyu, tarea)
+                WORK4zy(:,:,2) = dd_ysw(wt(:, :, iz+1) * umt(:, :, iz+1) * dxu, tarea)
             endif
             wvdxdz = (WORK4zx(:,:,1) - WORK4zx(:,:,2)) / dzt(:, :, iz)
             wudydz = (WORK4zy(:,:,1) - WORK4zy(:,:,2)) / dzt(:, :, iz)
