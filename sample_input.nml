@@ -4,8 +4,7 @@
 
 &calcmode
 ifcurl        = F  ! [FALSE] If curl of momentum equation
-ifdecomp      = F  ! [FALSE] If full decomposition of nonlinear term (advection, stretching, twisting etc)
-ifdecompdebug = F  ! [FALSE] If output files with detailed error term from nonlinear decomposition
+ifdecomp      = F  ! [FALSE] If full decomposition of nonlinear term (advection, stretching, tilting etc)
 /
 
 &memode
