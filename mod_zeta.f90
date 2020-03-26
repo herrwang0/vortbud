@@ -624,28 +624,28 @@ module zeta
           ! advu
             ! d(uv) / dx
             var_F = vme(:,:,iz)/dxu
-            var_B = shiftx_w(vme(:,:,iz))/dxu
+            var_B = shift_xe(vme(:,:,iz))/dxu
             ! var_B(1,:) = MVALUE
             call dd_xw_chain(ue(:,:,iz), meanx_w(ue(:,:,iz)), var_F, meanx_w(var_F), &
                              ONES, u10du2_F, u20du1_F, rrc, rr_F)
-            call dd_xw_chain(shiftx_w(ue(:,:,iz)), meanx_w(shiftx_w(ue(:,:,iz))), var_B, meanx_w(var_B), &
+            call dd_xw_chain(shift_xe(ue(:,:,iz)), meanx_w(shift_xe(ue(:,:,iz))), var_B, meanx_w(var_B), &
                              ONES, u10du2_B, u20du1_B, rrc, rr_B)
 
-            ! Reserved for nonflux twisting terms
-            u1  = meanx_w(vme(:,:,iz))/dxu
-            u10 = meanx_w(meanx_w(vme(:,:,iz))/dxu)
-            u2  = ue(:,:,iz) - shiftx_w(ue(:,:,iz))
-            u20 = meanx_w(ue(:,:,iz) - shiftx_w(ue(:,:,iz)))
+            ! ! Reserved for nonflux twisting terms
+            ! u1  = meanx_w(vme(:,:,iz))/dxu
+            ! u10 = meanx_w(meanx_w(vme(:,:,iz))/dxu)
+            ! u2  = ue(:,:,iz) - shift_xe(ue(:,:,iz))
+            ! u20 = meanx_w(ue(:,:,iz) - shift_xe(ue(:,:,iz)))
 
-            test1 = (u20du1_F - u20du1_B)
-            test2 = u1*u2 - shiftx_w(u1*u2)
+            ! test1 = (u20du1_F - u20du1_B)
+            ! test2 = u1*u2 - shift_xe(u1*u2)
 
-            write(*, fmts_vor) 'test1: ', test1(B%xi_dp, B%yi_dp)
-            write(*, fmts_vor) 'test2: ', test2(B%xi_dp, B%yi_dp)
-            write(*, fmts_vor) 'diff: ', test1(B%xi_dp, B%yi_dp) - test2(B%xi_dp, B%yi_dp)
+            ! write(*, fmts_vor) 'test1: ', test1(B%xi_dp, B%yi_dp)
+            ! write(*, fmts_vor) 'test2: ', test2(B%xi_dp, B%yi_dp)
+            ! write(*, fmts_vor) 'diff: ', test1(B%xi_dp, B%yi_dp) - test2(B%xi_dp, B%yi_dp)
 
             ! call dd_xw_chain(meanx_w(vme(:,:,iz))/dxu, meanx_w(meanx_w(vme(:,:,iz))/dxu), &
-            !                  ue(:,:,iz) - shiftx_w(ue(:,:,iz)), meanx_w(ue(:,:,iz) - shiftx_w(ue(:,:,iz))), &
+            !                  ue(:,:,iz) - shift_xe(ue(:,:,iz)), meanx_w(ue(:,:,iz) - shift_xe(ue(:,:,iz))), &
             !                  ONES, u10du2_F, u20du1_F, rrc, rr_F)
 
             !                 meany_s(u10du2) / tarea / dzt(:,:,iz)
@@ -655,7 +655,7 @@ module zeta
             ! call ddx_w_chain(DueDx, DueDx0, vme0, vme00, &
             !          tarea * dzt(:,:,iz), WORKstrXx, WORKdivVx, WORKrrc, WORKrr)
 
-!(meanx_w(var_F) + meanx_w(var_B))/2 * (ddx_w(ue(:,:,iz)) - ddx_w(shiftx_w(ue(:,:,iz)))) + 
+!(meanx_w(var_F) + meanx_w(var_B))/2 * (ddx_w(ue(:,:,iz)) - ddx_w(shift_xe(ue(:,:,iz)))) + 
 
 
           !  call ddx_w_chain(DueDx, DueDx0, vme0, vme00, &
@@ -668,11 +668,11 @@ module zeta
 
             ! d(uu) / dy
             var_F = ume(:,:,iz)/dyu
-            var_B = shiftx_w(ume(:,:,iz))/dyu
+            var_B = shift_xe(ume(:,:,iz))/dyu
             ! var_B(1,:) = MVALUE
             call dd_ys_chain(ue(:,:,iz), meany_s(ue(:,:,iz)), var_F, meany_s(var_F), &
                              ONES, u10du2_F, u20du1_F, rrc, rr_F)
-            call dd_ys_chain(shiftx_w(ue(:,:,iz)), meany_s(shiftx_w(ue(:,:,iz))), var_B, meany_s(var_B), &
+            call dd_ys_chain(shift_xe(ue(:,:,iz)), meany_s(shift_xe(ue(:,:,iz))), var_B, meany_s(var_B), &
                              ONES, u10du2_B, u20du1_B, rrc, rr_B)
 
             advu  (:, :, iz) = advu  (:, :, iz) - meanx_w(u10du2_F - u10du2_B) / tarea / dzt(:,:,iz)
@@ -683,11 +683,11 @@ module zeta
           ! advv
             ! d(vv) / dx
             var_F = vmn(:,:,iz)/dxu
-            var_B = shifty_s(vmn(:,:,iz))/dxu
+            var_B = shift_yn(vmn(:,:,iz))/dxu
             ! var_B(:,1) = MVALUE
             call dd_xw_chain(vn(:,:,iz), meanx_w(vn(:,:,iz)), var_F, meanx_w(var_F), &
                              ONES, u10du2_F, u20du1_F, rrc, rr_F)
-            call dd_xw_chain(shifty_s(vn(:,:,iz)), meanx_w(shifty_s(vn(:,:,iz))), var_B, meanx_w(var_B), &
+            call dd_xw_chain(shift_yn(vn(:,:,iz)), meanx_w(shift_yn(vn(:,:,iz))), var_B, meanx_w(var_B), &
                              ONES, u10du2_B, u20du1_B, rrc, rr_B)
 
             advv  (:, :, iz) = advv  (:, :, iz) + meany_s(u10du2_F - u10du2_B) / tarea / dzt(:,:,iz)
@@ -697,11 +697,11 @@ module zeta
 
             ! d(vu) / dy
             var_F = umn(:,:,iz)/dyu
-            var_B = shifty_s(umn(:,:,iz))/dyu
+            var_B = shift_yn(umn(:,:,iz))/dyu
             ! var_B(:,1) = MVALUE
             call dd_ys_chain(vn(:,:,iz), meany_s(vn(:,:,iz)), var_F, meany_s(var_F), &
                              ONES, u10du2_F, u20du1_F, rrc, rr_F)
-            call dd_ys_chain(shifty_s(vn(:,:,iz)), meany_s(shifty_s(vn(:,:,iz))), var_B, meany_s(var_B), &
+            call dd_ys_chain(shift_yn(vn(:,:,iz)), meany_s(shift_yn(vn(:,:,iz))), var_B, meany_s(var_B), &
                              ONES, u10du2_B, u20du1_B, rrc, rr_B)
 
 
