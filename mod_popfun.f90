@@ -51,24 +51,19 @@ endfunction t2u
 ! the weight function, the more general form of the function here allows dzu to be
 ! included in the weight function.
 function zcurl(varu, varv, wgtu, wgtv, wgt)
-  use derives, only : ddx, ddy
+  use derives, only : dd_xsw, dd_ysw
   implicit none
 
   real(kind=kd_r), dimension(:, :), intent(in) :: varu, varv, wgtu, wgtv, wgt
-  real(kind=kd_r), dimension(:, :), allocatable :: dvdx, dudy
   real(kind=kd_r), dimension(:, :), allocatable :: zcurl
   integer :: nx, ny
 
   nx = size(varu, 1)
   ny = size(varu, 2)
 
-  allocate(dvdx(nx, ny), dudy(nx, ny), zcurl(nx, ny))
-  dvdx = 0.
-  dudy = 0.
+  allocate(zcurl(nx, ny))
 
-  call ddx(varv, wgtv, wgt, dvdx)
-  call ddy(varu, wgtu, wgt, dudy)
-
-  zcurl = dvdx - dudy
+  zcurl = dd_xsw(varv * wgtv, wgt) - dd_ysw(varu * wgtu, wgt)
+  return
 endfunction zcurl
 endmodule
