@@ -5,7 +5,7 @@ module io
                      tlat, tlong, z_t, &
                      curlnonl, betav, stretchp, err_cor, curlpgrad, curlhdiff, curlvdiff, res, &
                      curladv, curlmet, err_nlsub, advu, advv, advw, advVx, advVy, advVz, err_nldecomp, &
-                     rr_rev, rr_cha, curladvf
+                     curladvf
     implicit none
     private
     public :: load_params, get_yyyymmdd, loadave_mom_sf, output_sf, load_mean_sf, &
@@ -46,18 +46,17 @@ module io
                    curlnonlc, errnlsub ,                        &
                    advu     , advv     , advw     , errnldcmp , &
                    advVx    , advVy    , advVz    , curlmet   , &
-                   errnl_rev, errnl_cha,                        &
                    advum    , advvm    , advwm    , errnldcmpm, &
                    advVxm   , advVym   , advVzm   , curlmetm
     endtype
 
     !!--------------------------------------------------------------------------
     ! * Calculation modes *
-    logical, public :: ifcurl = .False., ifdecomp = .False., ifdecompdebug = .False.
+    logical, public :: ifcurl = .False., ifdecomp = .False.
     logical, public :: ifmeaneddy = .False., ifmeanclm = .FALSE., ifdecomposed = .True.
 
     !!--------------------------------------------------------------------------
-    type(filename), public :: fn_mom, fn_vor, fn_vorm, fn_vore, fn_error
+    type(filename), public :: fn_mom, fn_vor, fn_vorm, fn_vore
     type(timelist), public :: T
 
     !!--------------------------------------------------------------------------
@@ -155,7 +154,7 @@ module io
         character(len = 20 ) :: fn_vore_sfx = "_me" ! Default is fn_vor_sfx + _me
         character(len = 1  ) :: fn_vore_dlm = ""    ! Default is the same as input
 
-        namelist /calcmode/ ifcurl, ifdecomp, ifdecompdebug
+        namelist /calcmode/ ifcurl, ifdecomp
         namelist /memode/ ifmeaneddy, ifmeanclm, ifdecomposed, menm_clm, &
                           meanfreq, nda_sec, seclist_in_st, seclist_in_ed, secst, seced
         namelist /time/ yrst, yred, mnst, mned, dast, daed, &
@@ -230,9 +229,6 @@ module io
                 write(*, '(A)') 'Curl of momentum equation and full decomposition for the nonlinear term'
                 write(*, '(A)') '  ERR_nlsub == curlnonl_eddy and only mean terms have decompostion.'
                 func = "cdme"
-                if (ifdecompdebug) then
-                   func = "cdme-"
-                endif
                 if (.not. ifmeaneddy) then
                     write(*,'(A)') "  Note: 'ifmeaneddy' was set to False. A decomposition of nonlinear terms of the climatology &
                              is essentially equivalent to a mean/eddy decomposition."
@@ -255,9 +251,6 @@ module io
             elseif (      ifcurl .and.       ifdecomp                       ) then
                 write(*, '(A)') 'Curl of momentum equation and decomposition of the nonlinear term'
                 func = "cdme"
-                if (ifdecompdebug) then
-                   func = "cdme-"
-                endif
                 if (ifmeaneddy) then
                    write(*, '(A)'), '  and Mean/eddy decomposition'
                    func_m = "dm"
@@ -287,9 +280,6 @@ module io
             func = "dm"
             func_m = ""
             func_me = ""
-            if (ifdecompdebug) then
-               func = "dm-"
-            endif
             if (ifmeaneddy) then
                 write(*,'(A)') "  Warning: Cannot do mean/eddy decomposition without curl of momentum equation."
             endif
@@ -867,15 +857,15 @@ module io
         dd = idoy - sum(eom(1:mm)) + eom(mm)
     endsubroutine
 
-    subroutine output_sf(func, fn_zeta, fn_error)
+    subroutine output_sf(func, fn_zeta)
         implicit none
-        character(len=*), intent(in) :: func, fn_zeta, fn_error
-        integer :: ncid_zeta, ncid_error
+        character(len=*), intent(in) :: func, fn_zeta
+        integer :: ncid_zeta
         type(nc_varid) :: varids
 
-        call create_output(func, fn_zeta, fn_error, ncid_zeta, ncid_error, varids)
-        call write_output(func, ncid_zeta, ncid_error, varids)
-        call close_output(func, ncid_zeta, ncid_error)
+        call create_output(func, fn_zeta, ncid_zeta, varids)
+        call write_output(func, ncid_zeta, varids)
+        call close_output(func, ncid_zeta)
     endsubroutine
 
     subroutine output_me(func_m, fn_me)
@@ -1182,11 +1172,11 @@ module io
         write(*, '(A, I1)') '  Finished writing zeta mean/eddy file ', stat_io
     endsubroutine
 
-    subroutine create_output(func, fn_zeta, fn_error, ncid_zeta, ncid_error, varids)
+    subroutine create_output(func, fn_zeta, ncid_zeta, varids)
         use netcdf
         implicit none
-        character(len=*), intent(in) :: func, fn_zeta, fn_error
-        integer, intent(inout) :: ncid_zeta, ncid_error
+        character(len=*), intent(in) :: func, fn_zeta
+        integer, intent(inout) :: ncid_zeta
         type(nc_varid), intent(inout) :: varids
         integer :: stat_create, stat_defdim, stat_defvar, stat_putatt, stat_inqvar, &
                    stat_getvar, stat_putvar, stat_io
@@ -1367,55 +1357,13 @@ module io
         stat_putvar = nf90_put_var(ncid_zeta, varid_lon,  tlong, &
            start = (/1, 1/), count = (/B%nx, B%ny/))
         stat_putvar = nf90_put_var(ncid_zeta, varid_dep,  z_t)
-
-        if (index(func, "-") /= 0) then
-            write(*, *)
-            write(*, '(A, A)') 'Creating output error file: ', trim(fn_error)
-
-            stat_create = nf90_create(trim(fn_error), cmode=or(nf90_clobber,nf90_64bit_offset), ncid=ncid_error)
-
-            stat_defdim = nf90_def_dim(ncid_error, "nlon", B%nx, dimid_lon)
-            stat_defdim = nf90_def_dim(ncid_error, "nlat", B%ny, dimid_lat)
-            stat_defdim = nf90_def_dim(ncid_error, "z_t" , B%nz, dimid_dep)
-            stat_defdim = nf90_def_dim(ncid_error, "time", NF90_UNLIMITED, dimid_time)
-
-            stat_defvar = nf90_def_var(ncid_error, "TLONG", NF90_FLOAT, &
-               (/dimid_lon, dimid_lat/), varid_lon)
-            stat_defvar = nf90_def_var(ncid_error, "TLAT",  NF90_FLOAT, &
-               (/dimid_lon, dimid_lat/), varid_lat)
-            stat_defvar = nf90_def_var(ncid_error, "z_t" ,  NF90_FLOAT, dimid_dep , varid_dep )
-            stat_defvar = nf90_def_var(ncid_error, "time" , NF90_FLOAT, dimid_time, varid_time)
-
-            stat_defvar = nf90_def_var(ncid_error, "rr_rev",   nc_xtype, &
-              (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnl_rev)
-            stat_putatt = nf90_put_att(ncid_error, varids%errnl_rev, "Units", "1/s^2")
-            stat_putatt = nf90_put_att(ncid_error, varids%errnl_rev, "coordinates", "TLONG TLAT z_t time")
-            stat_putatt = nf90_put_att(ncid_error, varids%errnl_rev, "missing_value", MVALUE)
-
-            stat_defvar = nf90_def_var(ncid_error, "rr_cha",   nc_xtype, &
-              (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnl_cha)
-            stat_putatt = nf90_put_att(ncid_error, varids%errnl_cha, "Units", "1/s^2")
-            stat_putatt = nf90_put_att(ncid_error, varids%errnl_cha, "coordinates", "TLONG TLAT z_t time")
-            stat_putatt = nf90_put_att(ncid_error, varids%errnl_cha, "missing_value", MVALUE)
-
-            stat_create = nf90_enddef(ncid_error)
-            write(*, '(A, I1)') "  Finished netcdf define: ", stat_create
-
-            stat_putvar = nf90_put_var(ncid_error, varid_lat,  tlat , &
-               start = (/1, 1/), count = (/B%nx, B%ny/))
-            stat_putvar = nf90_put_var(ncid_error, varid_lon,  tlong, &
-               start = (/1, 1/), count = (/B%nx, B%ny/))
-            stat_putvar = nf90_put_var(ncid_error, varid_dep,  z_t)
-        else
-            ncid_error = 0
-        endif
     endsubroutine
 
-    subroutine write_output(func, ncid_zeta, ncid_error, varids)
+    subroutine write_output(func, ncid_zeta, varids)
         use netcdf
         implicit none
         character(len=*), intent(in) :: func
-        integer, intent(in) :: ncid_zeta, ncid_error
+        integer, intent(in) :: ncid_zeta
         type(nc_varid), intent(in) :: varids
         integer :: stat_putvar
 
@@ -1471,32 +1419,18 @@ module io
                 start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         endif
         write(*, '(A)') '  Finished writing'
-
-        if (index(func, "-") /=0) then
-            write(*, *)
-            write(*, '(A)') 'Start writing error file'
-
-            stat_putvar = nf90_put_var(ncid_error, varids%errnl_rev, rr_rev, &
-               start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
-            stat_putvar = nf90_put_var(ncid_error, varids%errnl_cha, rr_cha, &
-               start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
-            write(*, '(A)') '  Finished writing'
-        endif
     endsubroutine
 
-    subroutine close_output(func, ncid_zeta, ncid_error)
+    subroutine close_output(func, ncid_zeta)
         use netcdf
         implicit none
         character(len=*), intent(in) :: func
-        integer, intent(in) :: ncid_zeta, ncid_error
+        integer, intent(in) :: ncid_zeta
         integer :: stat_io
 
         write(*, *)
         write(*, '(A)') 'Closing output files'
         stat_io = nf90_close(ncid_zeta)
-        if (index(func, "-") /= 0) then
-            stat_io = nf90_close(ncid_error)
-        endif
     endsubroutine
 
     ! Check if files for mean exists and contains required variables depending on the calculation mode

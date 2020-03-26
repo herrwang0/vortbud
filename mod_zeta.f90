@@ -19,8 +19,6 @@ module zeta
         curlnonl, betav, stretchp, err_cor, curlpgrad, curlhdiff, curlvdiff, res
     real(kind=kd_r), dimension(:, :, :), allocatable, public :: &
         curladv, curlmet, err_nlsub, advu, advv, advw, advVx, advVy, advVz, err_nldecomp, curladvf
-    real(kind=kd_r), dimension(:, :, :), allocatable, public :: &
-        rr_rev, rr_cha
 
     ! Constants and grid info
     real(kind=kd_r), allocatable, public :: tlat(:,:), tlong(:,:), z_t(:)
@@ -601,9 +599,8 @@ module zeta
         use popfun, only : u2t
         implicit none
         real(kind=kd_r), dimension(B%nx, B%ny) :: ONES, var_F, var_B, &
-              u10du2_F, u20du1_F, u10du2_B, u20du1_B,rrc, rr_F, rr_B, &
-              u10du2_xt, u10du2_yt, u10du2_xb, u10du2_yb, u20du1_xt, u20du1_yt, u20du1_xb, u20du1_yb, &
-              rr_xt, rr_yt, rr_xb, rr_yb
+              u10du2_F, u20du1_F, u10du2_B, u20du1_B, &
+              u10du2_xt, u10du2_yt, u10du2_xb, u10du2_yb, u20du1_xt, u20du1_yt, u20du1_xb, u20du1_yb
         real(kind=kd_r), dimension(B%nx, B%ny) :: WORK, uudxdy, vvdxdy, wwdxdy, wvdxdz, wudydz, wm
         real(kind=kd_r), dimension(B%nx, B%ny, 2) :: WORK4zx, WORK4zy
         integer :: iz
@@ -627,9 +624,9 @@ module zeta
             var_B = shift_xe(vme(:,:,iz))/dxu
             ! var_B(1,:) = MVALUE
             call dd_xw_chain(ue(:,:,iz), mean_xw(ue(:,:,iz)), var_F, mean_xw(var_F), &
-                             ONES, u10du2_F, u20du1_F, rrc, rr_F)
+                             ONES, u10du2_F, u20du1_F)
             call dd_xw_chain(shift_xe(ue(:,:,iz)), mean_xw(shift_xe(ue(:,:,iz))), var_B, mean_xw(var_B), &
-                             ONES, u10du2_B, u20du1_B, rrc, rr_B)
+                             ONES, u10du2_B, u20du1_B)
 
             ! ! Reserved for nonflux twisting terms
             ! u1  = mean_xw(vme(:,:,iz))/dxu
@@ -664,21 +661,18 @@ module zeta
 
             advu  (:, :, iz) = advu  (:, :, iz) + mean_ys(u10du2_F - u10du2_B) / tarea / dzt(:,:,iz)
             advVx (:, :, iz) = advVx (:, :, iz) + mean_ys(u20du1_F - u20du1_B) / tarea / dzt(:,:,iz)
-            rr_cha(:, :, iz) = rr_cha(:, :, iz) + mean_ys(rr_F - rr_B) / tarea / dzt(:,:,iz)
 
             ! d(uu) / dy
             var_F = ume(:,:,iz)/dyu
             var_B = shift_xe(ume(:,:,iz))/dyu
             ! var_B(1,:) = MVALUE
             call dd_ys_chain(ue(:,:,iz), mean_ys(ue(:,:,iz)), var_F, mean_ys(var_F), &
-                             ONES, u10du2_F, u20du1_F, rrc, rr_F)
+                             ONES, u10du2_F, u20du1_F)
             call dd_ys_chain(shift_xe(ue(:,:,iz)), mean_ys(shift_xe(ue(:,:,iz))), var_B, mean_ys(var_B), &
-                             ONES, u10du2_B, u20du1_B, rrc, rr_B)
+                             ONES, u10du2_B, u20du1_B)
 
             advu  (:, :, iz) = advu  (:, :, iz) - mean_xw(u10du2_F - u10du2_B) / tarea / dzt(:,:,iz)
             advVx (:, :, iz) = advVx (:, :, iz) - mean_xw(u20du1_F - u20du1_B) / tarea / dzt(:,:,iz)
-            rr_cha(:, :, iz) = rr_cha(:, :, iz) - mean_xw(rr_F - rr_B) / tarea / dzt(:,:,iz)
-
 
           ! advv
             ! d(vv) / dx
@@ -686,62 +680,54 @@ module zeta
             var_B = shift_yn(vmn(:,:,iz))/dxu
             ! var_B(:,1) = MVALUE
             call dd_xw_chain(vn(:,:,iz), mean_xw(vn(:,:,iz)), var_F, mean_xw(var_F), &
-                             ONES, u10du2_F, u20du1_F, rrc, rr_F)
+                             ONES, u10du2_F, u20du1_F)
             call dd_xw_chain(shift_yn(vn(:,:,iz)), mean_xw(shift_yn(vn(:,:,iz))), var_B, mean_xw(var_B), &
-                             ONES, u10du2_B, u20du1_B, rrc, rr_B)
+                             ONES, u10du2_B, u20du1_B)
 
             advv  (:, :, iz) = advv  (:, :, iz) + mean_ys(u10du2_F - u10du2_B) / tarea / dzt(:,:,iz)
             advVy (:, :, iz) = advVy (:, :, iz) + mean_ys(u20du1_F - u20du1_B) / tarea / dzt(:,:,iz)
-            rr_cha(:, :, iz) = rr_cha(:, :, iz) + mean_ys(rr_F - rr_B) / tarea / dzt(:,:,iz)
-
 
             ! d(vu) / dy
             var_F = umn(:,:,iz)/dyu
             var_B = shift_yn(umn(:,:,iz))/dyu
             ! var_B(:,1) = MVALUE
             call dd_ys_chain(vn(:,:,iz), mean_ys(vn(:,:,iz)), var_F, mean_ys(var_F), &
-                             ONES, u10du2_F, u20du1_F, rrc, rr_F)
+                             ONES, u10du2_F, u20du1_F)
             call dd_ys_chain(shift_yn(vn(:,:,iz)), mean_ys(shift_yn(vn(:,:,iz))), var_B, mean_ys(var_B), &
-                             ONES, u10du2_B, u20du1_B, rrc, rr_B)
+                             ONES, u10du2_B, u20du1_B)
 
 
             advv  (:, :, iz) = advv  (:, :, iz) - mean_xw(u10du2_F - u10du2_B) / tarea / dzt(:,:,iz)
             advVy (:, :, iz) = advVy (:, :, iz) - mean_xw(u20du1_F - u20du1_B) / tarea / dzt(:,:,iz)
-            rr_cha(:, :, iz) = rr_cha(:, :, iz) - mean_xw(rr_F - rr_B) / tarea / dzt(:,:,iz)
 
           ! advw
             ! d(wv) / dx  &  d(wu) / dy
             if (iz == 1) then
                 call dd_xw_chain(wt(:,:,iz), mean_xw(wt(:,:,iz)), vmt(:,:,iz)*dyu, mean_xw(vmt(:,:,iz)*dyu), &
-                                 ONES, u10du2_xt, u20du1_xt, rrc, rr_xt)
+                                 ONES, u10du2_xt, u20du1_xt)
                 call dd_ys_chain(wt(:,:,iz), mean_ys(wt(:,:,iz)), umt(:,:,iz)*dxu, mean_ys(umt(:,:,iz)*dxu), &
-                                 ONES, u10du2_yt, u20du1_yt, rrc, rr_yt)
+                                 ONES, u10du2_yt, u20du1_yt)
             endif
 
             if (iz < B%nz) then
                 call dd_xw_chain(wt(:,:,iz+1), mean_xw(wt(:,:,iz+1)), vmt(:,:,iz+1)*dyu, mean_xw(vmt(:,:,iz+1)*dyu), &
-                                 ONES, u10du2_xb, u20du1_xb, rrc, rr_xb)
+                                 ONES, u10du2_xb, u20du1_xb)
                 call dd_ys_chain(wt(:,:,iz+1), mean_ys(wt(:,:,iz+1)), umt(:,:,iz+1)*dxu, mean_ys(umt(:,:,iz+1)*dxu), &
-                                 ONES, u10du2_yb, u20du1_yb, rrc, rr_yb)
+                                 ONES, u10du2_yb, u20du1_yb)
             else
                 u10du2_xb = 0.
                 u20du1_xb = 0.
                 u10du2_yb = 0.
                 u20du1_yb = 0.
-                rr_xb = 0.
-                rr_yb = 0.
             endif
 
             advw (:, :, iz) = (mean_ys(u10du2_xt - u10du2_xb) - mean_xw(u10du2_yt - u10du2_yb)) / tarea / dzt(:, :, iz)
             advVz(:, :, iz) = (mean_ys(u20du1_xt - u20du1_xb) - mean_xw(u20du1_yt - u20du1_yb)) / tarea / dzt(:, :, iz)
-            rr_cha(:, :, iz) = rr_cha(:, :, iz) + (mean_ys(rr_xt - rr_xb) - mean_xw(rr_yt - rr_yb)) / tarea / dzt(:, :, iz)
 
             u10du2_xt = u10du2_xb
             u10du2_yt = u10du2_yb
             u20du1_xt = u20du1_xb
             u20du1_yt = u20du1_yb
-            rr_xt = rr_xb
-            rr_yt = rr_yb
 
           ! Add terms to compose flux of 3D voricity twisting
             ! call ddx_w(0.5 * uc(:, :, iz) * uc(:, :, iz) * dzu(:, :, iz), ONES, WORK)
@@ -794,14 +780,13 @@ module zeta
         enddo
 
         ! RHS
-        advu = -advu; advv = -advv; advw = -advw; rr_cha = -rr_cha
+        advu = -advu; advv = -advv; advw = -advw;
         advVx = -advVx; advVy = -advVy; advVz = -advVz
 
         where(tmask)
             advu  = MVALUE
             advv  = MVALUE
             advw  = MVALUE
-            rr_cha = MVALUE
             advVx = MVALUE
             advVy = MVALUE
             advVz = MVALUE
@@ -810,7 +795,6 @@ module zeta
         write(*, fmtm_vor) 'advu: ', advu(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         write(*, fmtm_vor) 'advv: ', advv(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         write(*, fmtm_vor) 'advw: ', advw(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-        write(*, fmtm_vor) 'rr_cha: ', rr_cha(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         ! write(*, fmtm_vor) 'rcuv', rcuv(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         ! write(*, fmtm_vor) 'rcuu', rcuu(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         ! write(*, fmtm_vor) 'rcvv', rcvv(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
@@ -835,7 +819,6 @@ module zeta
         ! write(*, fmtm_vor) 'rsz2', rsz2(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
 
         deallocate(ue, vn, wt, ume, vme, umn, vmn, umt, vmt)
-        err_nldecomp = rr_rev + rr_cha
     endsubroutine
 
     subroutine verify_nonl()
@@ -959,8 +942,6 @@ module zeta
                      advVx(B%nx, B%ny, B%nz), advVy(B%nx, B%ny, B%nz), advVz(B%nx, B%ny, B%nz), err_nldecomp(B%nx, B%ny, B%nz))
             advu  = 0.; advv  = 0.; advw  = 0.
             advVx = 0.; advVy = 0.; advVz = 0.; err_nldecomp = 0.
-            allocate(rr_rev(B%nx, B%ny, B%nz), rr_cha(B%nx, B%ny, B%nz))
-            rr_rev = 0.; rr_cha = 0.
         endif
     endsubroutine
 
@@ -1025,7 +1006,7 @@ module zeta
             deallocate(curladvf)
         endif
         if (index(func_c, "d") /= 0) then
-            deallocate(advu, advv, advw, advVx, advVy, advVz, err_nldecomp, rr_rev, rr_cha)
+            deallocate(advu, advv, advw, advVx, advVy, advVz, err_nldecomp)
         endif
     endsubroutine
 
