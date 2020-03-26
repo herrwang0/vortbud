@@ -289,10 +289,15 @@ module io
         endif
 
         if (index(func, "d") /=0 .and. .not. flxtwi) then
-            func(index(func, "d")+2:10) = func(index(func, "d")+1:9)
-            func(index(func, "d")+1) = "#"
+            func = func(1:index(func, "d"))//"#"//func(index(func, "d")+1:9)
         endif
-        
+        if (index(func_m, "d") /=0 .and. .not. flxtwi) then
+            func_m = func_m(1:index(func, "d"))//"#"//func_m(index(func_m, "d")+1:9)
+        endif        
+        if (index(func_me, "d") /=0 .and. .not. flxtwi) then
+            func_me = func_me(1:index(func_me, "d"))//"#"//func(index(func_me, "d")+1:9)
+        endif
+
         write(*, *)
         write(*, '(A, A)') '  func    = ', trim(func)
         write(*, '(A, A)') '  func_m  = ', trim(func_m)
