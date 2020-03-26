@@ -3,8 +3,9 @@
 !    mean/eddy decomposition, either in the same run or using existing vort equation files.
 
 &calcmode
-ifcurl        = F  ! [FALSE] If curl of momentum equation
-ifdecomp      = F  ! [FALSE] If full decomposition of nonlinear term (advection, stretching, tilting etc)
+ifcurl   = F  ! [FALSE] If curl of momentum equation
+ifdecomp = F  ! [FALSE] If full decomposition of nonlinear term (advection, stretching, tilting etc)
+flxtwi   = T  ! [TRUE] If using flux form twisting terms (no error)
 /
 
 &memode

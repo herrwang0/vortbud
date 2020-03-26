@@ -50,6 +50,8 @@ module zeta
     ! offline adv ("a"): offline calculation of nonlinear advection term (curladv)
     ! offline met ("m"): offline calculation of nonlinear metric term (curlmet)
     ! decomp adv ("d"): decomposition of nonlinear advection term.
+    !   ("d"): flux form twisting term (default)
+    !   ("d#"): traditional twisting term
     ! online adv from flux ("f"): "online" calculation of nonlinear advection term through momentum fluxes
     ! + err_nlsub ("e"): difference between curlnonl online and offline (should not be used as a standalone function)
     !!--------------------------------------------------------------------------
@@ -94,8 +96,13 @@ module zeta
         if (index(func_c, "d") /= 0) then
             write(*, *)
             write(*, '(A)') '  ---------------------------------------------------'
-            write(*, '(A)') '  Decomposing curl of advection term'
-            call decomp_curladv()
+            if (index(func_c, "d#") /= 0) then
+                write(*, '(A)') '  Decomposing curl of advection term (w/ nonflux twisting term)'
+                call decomp_curladv()
+            else
+                write(*, '(A)') '  Decomposing curl of advection term (w/ flux twisting term)'
+                call decomp_curladv()
+            endif
         endif
         if (index(func_c, "e") /= 0) then
             write(*, *)

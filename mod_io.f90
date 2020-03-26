@@ -52,7 +52,7 @@ module io
 
     !!--------------------------------------------------------------------------
     ! * Calculation modes *
-    logical, public :: ifcurl = .False., ifdecomp = .False.
+    logical, public :: ifcurl = .False., ifdecomp = .False., flxtwi = .True.
     logical, public :: ifmeaneddy = .False., ifmeanclm = .FALSE., ifdecomposed = .True.
 
     !!--------------------------------------------------------------------------
@@ -154,7 +154,7 @@ module io
         character(len = 20 ) :: fn_vore_sfx = "_me" ! Default is fn_vor_sfx + _me
         character(len = 1  ) :: fn_vore_dlm = ""    ! Default is the same as input
 
-        namelist /calcmode/ ifcurl, ifdecomp
+        namelist /calcmode/ ifcurl, ifdecomp, flxtwi
         namelist /memode/ ifmeaneddy, ifmeanclm, ifdecomposed, menm_clm, &
                           meanfreq, nda_sec, seclist_in_st, seclist_in_ed, secst, seced
         namelist /time/ yrst, yred, mnst, mned, dast, daed, &
@@ -192,6 +192,9 @@ module io
         write(*, '(A)') "Calculation options from user:"
         write(*, '(A40, L)'), "Curl of momentum equation? ", ifcurl
         write(*, '(A40, L)'), "Decomposition of the nonlinear term? ", ifdecomp
+        if (ifdecomp) then 
+            write(*, '(A40, L)'), "  Using flux form twisting term? ", flxtwi
+        endif
         write(*, '(A40, L)'), "Mean/Eddy decomposition? ", ifmeaneddy
         if (ifmeaneddy) then
             write(*, '(A40, L)'), "  with full decomposition for nonlinear term? ", ifdecomposed
@@ -284,6 +287,12 @@ module io
                 write(*,'(A)') "  Warning: Cannot do mean/eddy decomposition without curl of momentum equation."
             endif
         endif
+
+        if (index(func, "d") /=0 .and. .not. flxtwi) then
+            func(index(func, "d")+2:10) = func(index(func, "d")+1:9)
+            func(index(func, "d")+1) = "#"
+        endif
+        
         write(*, *)
         write(*, '(A, A)') '  func    = ', trim(func)
         write(*, '(A, A)') '  func_m  = ', trim(func_m)
