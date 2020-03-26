@@ -48,7 +48,7 @@ Program main
                                         T%yrnm_clm, T%avnm_clm, fn_mom)
                     call init_zetavars_output(func_m)
                     call calc_zeta(func_m)
-                    call output_sf(func_m, fn_vorm%fn, '')
+                    call output_sf(func_m, fn_vorm%fn)
                     call release_zetavars_input(func_m)
                     call release_zetavars_output(func_m)
                 else
@@ -90,13 +90,8 @@ Program main
                         write(*, *)
                         write(*, '(A)') '  ---------------------------------------------------'
                         write(*, '(A, A)') '  Outputing file(s): ', trim(fn_vor%fn)
-                        if (index(func, "-") /= 0) then
-                            write(fn_error%fn, '(A, A, A, A, A, A)') &
-                                  trim(fn_vor%dir), trim(fn_vor%pfx), 'decompErrs_', trim(yyyymmdd), trim(fn_vor%sfx), '.nc'
-                            write(*, '(A, A)') '    and ', trim(fn_error%fn)
-                        endif
                         ! Output files
-                        call output_sf(func, fn_vor%fn, fn_error%fn)
+                        call output_sf(func, fn_vor%fn)
                         ! Release working variables
                         call release_zetavars_output(func = func)
                         write(*, '(A, A)') "  Finished ", yyyymmdd
