@@ -17,11 +17,12 @@ module zeta
     ! Output variables
     real(kind=kd_r), dimension(:, :, :), allocatable, public :: &
         curlnonl, betav, stretchp, err_cor, curlpgrad, curlhdiff, curlvdiff, res
-    ! real(kind=kd_r), dimension(:, :, :), allocatable, public :: &
-    !     curladv, curlmet, err_nlsub, advu, advv, advw, advVx, advVy, advVz, err_nldecomp, curladvf
     real(kind=kd_r), dimension(:, :, :), allocatable, public :: &
-        curladv, curlmet, curladvu, curladvv, curladvw, err_nlsub, &
-        advu, advv, advw, advVx, advVy, advVz, err_nldecomp, curladvf
+        curladv, curlmet, err_nlsub, advu, advv, advw, advVx, advVy, advVz, err_nldecomp, curladvf
+    real(kind=kd_r), dimension(:, :, :), allocatable, public :: curladvu, curladvv, curladvw
+    real(kind=kd_r), dimension(:, :, :), allocatable, public :: &
+        advu_x, advv_x, advw_x, advVx_x, advVy_x, advVz_x, errnl_ux, errnl_vx, errnl_wx, &
+        advu_y, advv_y, advw_y, advVx_y, advVy_y, advVz_y, errnl_uy, errnl_vy, errnl_wy
 
     ! Constants and grid info
     real(kind=kd_r), allocatable, public :: tlat(:,:), tlong(:,:), z_t(:)
@@ -106,11 +107,21 @@ module zeta
             write(*, *)
             write(*, '(A)') '  ---------------------------------------------------'
             if (index(func_c, "d#") /= 0) then
-                write(*, '(A)') '  Decomposing curl of advection term (w/ nonflux twisting term)'
-                call decomp_curladv(.False.)
+                if (index(func_c, "d#-") /= 0) then
+                    write(*, '(A)') '  Decomposing curl of advection term (w/ nonflux twisting term, w/ subcomponents)'
+                    call decomp_curladv(.False., .True.)
+                else
+                    write(*, '(A)') '  Decomposing curl of advection term (w/ nonflux twisting term)'
+                    call decomp_curladv(.False., .False.)
+                endif
             else
-                write(*, '(A)') '  Decomposing curl of advection term (w/ flux twisting term)'
-                call decomp_curladv(.True.)
+                if (index(func_c, "d-") /= 0) then
+                    write(*, '(A)') '  Decomposing curl of advection term (w/ flux twisting term, w/ subcomponents)'
+                    call decomp_curladv(.True., .True.)
+                else
+                    write(*, '(A)') '  Decomposing curl of advection term (w/ flux twisting term)'
+                    call decomp_curladv(.True., .False.)
+                endif
             endif
         endif
         if (index(func_c, "e") /= 0) then
@@ -601,12 +612,12 @@ module zeta
         enddo
     endsubroutine
 
-    subroutine decomp_curladv(twif)
+    subroutine decomp_curladv(twif, debug)
         use derives
         use popfun, only : u2t
         implicit none
-        logical, intent(in) :: twif
-        real(kind=kd_r), dimension(B%nx, B%ny) :: ONES, u1, u2, test1, test2, test3
+        logical, intent(in) :: twif, debug
+        real(kind=kd_r), dimension(B%nx, B%ny) :: ONES, WORK, u1, u2, test1, test2, test3
         real(kind=kd_r), dimension(B%nx, B%ny) :: F_uudxdy, F_vvdxdy, F_wwdxdy, F_wvdxdz, F_wudydz, wm
         real(kind=kd_r), dimension(B%nx, B%ny, 2) :: u10du2, u20du1, u10du2_zx, u20du1_zx, u10du2_zy, u20du1_zy
         real(kind=kd_r), dimension(B%nx, B%ny, 2) :: F_wdzx, F_wdzy
@@ -633,27 +644,23 @@ module zeta
             u1 = shift_xe(ue(:,:,iz))
             u2 = shift_xe(vme(:,:,iz))/dxu
             call dd_xw_chain(u1, mean_xw(u1), u2, mean_xw(u2), ONES, u10du2(:,:,1), u20du1(:,:,1))
-            advu(:, :, iz) = advu(:, :, iz) + mean_ys(u10du2(:,:,2) - u10du2(:,:,1)) / tarea / dzt(:,:,iz)
+
+            WORK = mean_ys(u10du2(:,:,2) - u10du2(:,:,1)) / tarea / dzt(:,:,iz)
+            advu(:, :, iz) = advu(:, :, iz) + WORK
+            if (debug) advu_x(:, :, iz) = WORK
 
             if (twif) then
-                advVx(:, :, iz) = advVx(:, :, iz) + mean_ys(u20du1(:,:,2) - u20du1(:,:,1)) / tarea / dzt(:,:,iz)
+                WORK = mean_ys(u20du1(:,:,2) - u20du1(:,:,1)) / tarea / dzt(:,:,iz)
+                advVx(:, :, iz) = advVx(:, :, iz) + WORK
+                if (debug) advVx_x(:, :, iz) = WORK
             else
-                advVx(:, :, iz) = advVx(:, :, iz) + &
-                  mean_ys(mean_xw(dd_xw(ue(:,:,iz), ONES)) * mean_xw(dd_xw(vme(:,:,iz), dxu))) / tarea / dzt(:,:,iz)
-                err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) + &
-                  mean_ys(mean_xw(mean_xw(vme(:,:,iz))/dxu) * dd_xw(dd_xw(ue(:,:,iz), ONES), ONES)) / tarea / dzt(:,:,iz)
+                WORK = mean_ys(mean_xw(dd_xw(ue(:,:,iz), ONES)) * mean_xw(dd_xw(vme(:,:,iz), dxu))) / tarea / dzt(:,:,iz)
+                advVx(:, :, iz) = advVx(:, :, iz) + WORK
+                if (debug) advVx_x(:, :, iz) = WORK
+                WORK = mean_ys(mean_xw(mean_xw(vme(:,:,iz))/dxu) * dd_xw(dd_xw(ue(:,:,iz), ONES), ONES)) / tarea / dzt(:,:,iz)
+                err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) + WORK
+                if (debug) errnl_ux(:, :, iz) = WORK                  
             endif
-
-            ! test1 = mean_ys(u20du1(:,:,2) - u20du1(:,:,1)) / tarea / dzt(:,:,iz)
-            ! test2 = mean_ys(mean_xw(mean_xw(vme(:,:,iz))/dxu) * dd_xw(dd_xw(ue(:,:,iz), ONES), ONES)) / tarea / dzt(:,:,iz)
-            ! test3 = mean_ys(mean_xw(dd_xw(ue(:,:,iz), ONES)) * mean_xw(dd_xw(vme(:,:,iz), dxu))) / tarea / dzt(:,:,iz)
-
-            ! print*, test1(B%xi_dp, B%yi_dp)
-            ! print*, test2(B%xi_dp, B%yi_dp)
-            ! print*, test3(B%xi_dp, B%yi_dp)
-            ! print*, test1(B%xi_dp, B%yi_dp) - test2(B%xi_dp, B%yi_dp) - test3(B%xi_dp, B%yi_dp)
-            ! advu(:, :, iz) = advu(:, :, iz) + 
-            ! mean_sw(ue(:,:,iz)) * dd_xw(vme(:,:,iz)/dxu, ONES) - mean_sw(shift_xe(ue(:,:,iz))) * dd_xw(shift_xe(vme(:,:,iz))/dxu, ONES)
 
             ! d [d(uu)/dy] / dx = d (udu/dy) / dx + d (udu/dy) / dx
             u1 = ue(:,:,iz)
@@ -662,27 +669,22 @@ module zeta
             u1 = shift_xe(ue(:,:,iz))
             u2 = shift_xe(ume(:,:,iz))/dyu
             call dd_ys_chain(u1, mean_ys(u1), u2, mean_ys(u2), ONES, u10du2(:,:,1), u20du1(:,:,1))
-            advu(:, :, iz) = advu(:, :, iz) - mean_xw(u10du2(:,:,2) - u10du2(:,:,1)) / tarea / dzt(:,:,iz)
+            WORK = mean_xw(u10du2(:,:,2) - u10du2(:,:,1)) / tarea / dzt(:,:,iz)
+            advu(:, :, iz) = advu(:, :, iz) - WORK
+            if (debug) advu_y(:, :, iz) = -WORK
 
             if (twif) then
-                advVx(:, :, iz) = advVx(:, :, iz) - mean_xw(u20du1(:,:,2) - u20du1(:,:,1)) / tarea / dzt(:,:,iz)
+                WORK = mean_xw(u20du1(:,:,2) - u20du1(:,:,1)) / tarea / dzt(:,:,iz)
+                advVx(:, :, iz) = advVx(:, :, iz) - WORK
+                if (debug) advu_y(:, :, iz) = -WORK
             else
-                advVx(:, :, iz) = advVx(:, :, iz) - &
-                  mean_xw(mean_xw(dd_ys(ue(:,:,iz), ONES)) * mean_ys(dd_xw(ume(:,:,iz), dyu))) / tarea / dzt(:,:,iz)
-                err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) - &
-                  mean_xw(mean_ys(mean_xw(ume(:,:,iz))/dyu) * dd_xw(dd_ys(ue(:,:,iz), ONES), ONES)) / tarea / dzt(:,:,iz)
+                WORK = mean_xw(mean_xw(dd_ys(ue(:,:,iz), ONES)) * mean_ys(dd_xw(ume(:,:,iz), dyu))) / tarea / dzt(:,:,iz)
+                advVx(:, :, iz) = advVx(:, :, iz) - WORK
+                if (debug) advVx_y(:, :, iz) = -WORK
+                WORK = mean_xw(mean_ys(mean_xw(ume(:,:,iz))/dyu) * dd_xw(dd_ys(ue(:,:,iz), ONES), ONES)) / tarea / dzt(:,:,iz)
+                err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) - WORK
+                if (debug) errnl_uy(:, :, iz) = -WORK
             endif
-
-            test1 = mean_xw(u20du1(:,:,2) - u20du1(:,:,1)) / tarea / dzt(:,:,iz)
-            test2 = mean_xw(mean_ys(mean_xw(ume(:,:,iz))/dyu) * dd_xw(dd_ys(ue(:,:,iz), ONES), ONES)) / tarea / dzt(:,:,iz)
-            test3 = mean_xw(mean_xw(dd_ys(ue(:,:,iz), ONES)) * mean_ys(dd_xw(ume(:,:,iz), dyu))) / tarea / dzt(:,:,iz)
-
-            print*, 'd (udu/dy) / dx'
-            print*, 'test1:', test1(B%xi_dp, B%yi_dp)
-            print*, 'test2:', test2(B%xi_dp, B%yi_dp)
-            print*, 'test3:', test3(B%xi_dp, B%yi_dp)
-            print*, 'diff', test1(B%xi_dp, B%yi_dp) - test2(B%xi_dp, B%yi_dp) - test3(B%xi_dp, B%yi_dp)
-            print*, ""
 
           ! advv
             ! d [d(vv)/dx] / dy = d (vdvdx) / dy + d (vdvdx) / dy
@@ -692,27 +694,22 @@ module zeta
             u1 = shift_yn(vn(:,:,iz))
             u2 = shift_yn(vmn(:,:,iz))/dxu
             call dd_xw_chain(u1, mean_xw(u1), u2, mean_xw(u2), ONES, u10du2(:,:,1), u20du1(:,:,1))
-            advv(:, :, iz) = advv(:, :, iz) + mean_ys(u10du2(:,:,2) - u10du2(:,:,1)) / tarea / dzt(:,:,iz)
+            WORK = mean_ys(u10du2(:,:,2) - u10du2(:,:,1)) / tarea / dzt(:,:,iz)
+            advv(:, :, iz) = advv(:, :, iz) + WORK
+            if (debug) advv_x(:, :, iz) = WORK
 
             if (twif) then
-                advVy(:, :, iz) = advVy(:, :, iz) + mean_ys(u20du1(:,:,2) - u20du1(:,:,1)) / tarea / dzt(:,:,iz)
+                WORK = mean_ys(u20du1(:,:,2) - u20du1(:,:,1)) / tarea / dzt(:,:,iz)
+                advVy(:, :, iz) = advVy(:, :, iz) + WORK
+                if (debug) advVy_x(:, :, iz) = WORK
             else
-                advVy(:, :, iz) = advVy(:, :, iz) + &
-                  mean_ys(mean_ys(dd_xw(vn(:,:,iz), ONES)) * mean_xw(dd_ys(vmn(:,:,iz), dxu))) / tarea / dzt(:,:,iz)
-                err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) - &
-                  mean_ys(mean_xw(mean_ys(vmn(:,:,iz))/dxu) * dd_ys(dd_xw(vn(:,:,iz), ONES), ONES)) / tarea / dzt(:,:,iz)
+                WORK = mean_ys(mean_ys(dd_xw(vn(:,:,iz), ONES)) * mean_xw(dd_ys(vmn(:,:,iz), dxu))) / tarea / dzt(:,:,iz)
+                advVy(:, :, iz) = advVy(:, :, iz) + WORK
+                if (debug) advVy_x(:, :, iz) = WORK
+                WORK = mean_ys(mean_xw(mean_ys(vmn(:,:,iz))/dxu) * dd_ys(dd_xw(vn(:,:,iz), ONES), ONES)) / tarea / dzt(:,:,iz)
+                err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) + WORK
+                if (debug) errnl_vx(:, :, iz) = WORK
             endif
-
-            test1 = mean_ys(u20du1(:,:,2) - u20du1(:,:,1)) / tarea / dzt(:,:,iz)
-            test2 = mean_ys(mean_xw(mean_ys(vmn(:,:,iz))/dxu) * dd_ys(dd_xw(vn(:,:,iz), ONES), ONES)) / tarea / dzt(:,:,iz)
-            test3 = mean_ys(mean_ys(dd_xw(vn(:,:,iz), ONES)) * mean_xw(dd_ys(vmn(:,:,iz), dxu))) / tarea / dzt(:,:,iz)
-
-            print*, 'd (vdvdx) / dy'
-            print*, 'test1:', test1(B%xi_dp, B%yi_dp)
-            print*, 'test2:', test2(B%xi_dp, B%yi_dp)
-            print*, 'test3:', test3(B%xi_dp, B%yi_dp)
-            print*, 'diff', test1(B%xi_dp, B%yi_dp) - test2(B%xi_dp, B%yi_dp) - test3(B%xi_dp, B%yi_dp)
-            print*, ""
 
             ! d [d(vu)/dy] / dy = d (vdu/dy) / dy + d (udv/dy) / dy
             u1 = vn(:,:,iz)
@@ -721,27 +718,22 @@ module zeta
             u1 = shift_yn(vn(:,:,iz))
             u2 = shift_yn(umn(:,:,iz))/dyu
             call dd_ys_chain(u1, mean_ys(u1), u2, mean_ys(u2), ONES, u10du2(:,:,1), u20du1(:,:,1))
-            advv(:, :, iz) = advv(:, :, iz) - mean_xw(u10du2(:,:,2) - u10du2(:,:,1)) / tarea / dzt(:,:,iz)
+            WORK = mean_xw(u10du2(:,:,2) - u10du2(:,:,1)) / tarea / dzt(:,:,iz)
+            advv(:, :, iz) = advv(:, :, iz) - WORK
+            if (debug) advv_y(:, :, iz) = -WORK
 
             if (twif) then
-                advVy(:, :, iz) = advVy(:, :, iz) - mean_xw(u20du1(:,:,2) - u20du1(:,:,1)) / tarea / dzt(:,:,iz)
+                WORK = mean_xw(u20du1(:,:,2) - u20du1(:,:,1)) / tarea / dzt(:,:,iz)
+                advVy(:, :, iz) = advVy(:, :, iz) - WORK
+                if (debug) advVy_y(:, :, iz) = -WORK
             else
-                advVy(:, :, iz) = advVy(:, :, iz) - &
-                  mean_xw(mean_ys(dd_ys(vn(:,:,iz), ONES)) * mean_ys(dd_ys(umn(:,:,iz), dyu))) / tarea / dzt(:,:,iz)
-                err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) - &
-                  mean_xw(mean_ys(mean_ys(umn(:,:,iz))/dyu) * dd_ys(dd_ys(vn(:,:,iz), ONES), ONES)) / tarea / dzt(:,:,iz)
+                WORK = mean_xw(mean_ys(dd_ys(vn(:,:,iz), ONES)) * mean_ys(dd_ys(umn(:,:,iz), dyu))) / tarea / dzt(:,:,iz)
+                advVy(:, :, iz) = advVy(:, :, iz) - WORK
+                if (debug) advVy_y(:, :, iz) = -WORK
+                WORK = mean_xw(mean_ys(mean_ys(umn(:,:,iz))/dyu) * dd_ys(dd_ys(vn(:,:,iz), ONES), ONES)) / tarea / dzt(:,:,iz)
+                err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) - WORK
+                if (debug) errnl_vy(:, :, iz) = -WORK
             endif
-
-            test1 = mean_xw(u20du1(:,:,2) - u20du1(:,:,1)) / tarea / dzt(:,:,iz)
-            test2 = mean_xw(mean_ys(mean_ys(umn(:,:,iz))/dyu) * dd_ys(dd_ys(vn(:,:,iz), ONES), ONES)) / tarea / dzt(:,:,iz)
-            test3 = mean_xw(mean_ys(dd_ys(vn(:,:,iz), ONES)) * mean_ys(dd_ys(umn(:,:,iz), dyu))) / tarea / dzt(:,:,iz)
-
-            print*, 'd (udvdy) / dy'
-            print*, 'test1:', test1(B%xi_dp, B%yi_dp)
-            print*, 'test2:', test2(B%xi_dp, B%yi_dp)
-            print*, 'test3:', test3(B%xi_dp, B%yi_dp)
-            print*, 'diff', test1(B%xi_dp, B%yi_dp) - test2(B%xi_dp, B%yi_dp) - test3(B%xi_dp, B%yi_dp)
-            print*, ""
 
           ! advw
             ! d(wv) / dx  &  d(wu) / dy
@@ -766,44 +758,62 @@ module zeta
                 call dd_ys_chain(u1, mean_ys(u1), u2, mean_ys(u2), ONES, u10du2_zy(:,:,1), u20du1_zy(:,:,1))
             endif
 
-            advw(:, :, iz) = (mean_ys(u10du2_zx(:,:,2) - u10du2_zx(:,:,1)) - mean_xw(u10du2_zy(:,:,2) - u10du2_zy(:,:,1))) &
-                              / tarea / dzt(:, :, iz)
+            WORK = mean_ys(u10du2_zx(:,:,2) - u10du2_zx(:,:,1)) / tarea / dzt(:, :, iz)
+            advw(:, :, iz) = advw(:, :, iz) + WORK
+            if (debug) advw_x(:, :, iz) = WORK
+
+            WORK = mean_xw(u10du2_zy(:,:,2) - u10du2_zy(:,:,1)) / tarea / dzt(:, :, iz)
+            advw(:, :, iz) = advw(:, :, iz) - WORK
+            if (debug) advw_y(:, :, iz) = -WORK
+
             if (twif) then
-                advVz(:, :, iz) = (mean_ys(u20du1_zx(:,:,2) - u20du1_zx(:,:,1)) - mean_xw(u20du1_zy(:,:,2) - u20du1_zy(:,:,1))) &
-                                  / tarea / dzt(:, :, iz)
+                WORK = mean_ys(u20du1_zx(:,:,2) - u20du1_zx(:,:,1)) / tarea / dzt(:, :, iz)
+                advVz(:, :, iz) = advVz(:, :, iz) + WORK
+                if (debug) advVz_x(:, :, iz) = WORK
+
+                WORK = mean_xw(u20du1_zy(:,:,2) - u20du1_zy(:,:,1)) / tarea / dzt(:, :, iz)
+                advVz(:, :, iz) = advVz(:, :, iz) - WORK
+                if (debug) advVz_y(:, :, iz) = WORK
             else
                 if (iz == B%nz) then
-                    advVz(:, :, iz) = advVz(:, :, iz) + &
-                      (mean_ys(mean_xw((vmt(:,:,iz) - 0.) * dyu) * dd_xw((wt(:,:,iz) + 0.)/2, ONES)) - &
-                       mean_xw(mean_ys((umt(:,:,iz) - 0.) * dxu) * dd_ys((wt(:,:,iz) + 0.)/2, ONES))) / tarea / dzt(:,:,iz) 
-                    err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) + &
-                      (mean_ys(dd_xw(wt(:,:,iz) - 0., ONES) * mean_xw((vmt(:,:,iz) + 0.)/2 * dyu)) - &
-                       mean_xw(dd_ys(wt(:,:,iz) - 0., ONES) * mean_ys((umt(:,:,iz) + 0.)/2 * dxu))) / tarea / dzt(:,:,iz)
-                else
-                    advVz(:, :, iz) = advVz(:, :, iz) + &
-                      (mean_ys(mean_xw((vmt(:,:,iz) - vmt(:,:,iz+1)) * dyu) * dd_xw((wt(:,:,iz) + wt(:,:,iz+1))/2, ONES)) - &
-                       mean_xw(mean_ys((umt(:,:,iz) - umt(:,:,iz+1)) * dxu) * dd_ys((wt(:,:,iz) + wt(:,:,iz+1))/2, ONES))) / tarea / dzt(:,:,iz) 
-                    err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) + &
-                      (mean_ys(dd_xw(wt(:,:,iz) - wt(:,:,iz+1), ONES) * mean_xw((vmt(:,:,iz) + vmt(:,:,iz+1))/2 * dyu)) - &
-                       mean_xw(dd_ys(wt(:,:,iz) - wt(:,:,iz+1), ONES) * mean_ys((umt(:,:,iz) + umt(:,:,iz+1))/2 * dxu))) / tarea / dzt(:,:,iz)
+                    WORK = mean_ys(mean_xw((vmt(:,:,iz) - 0.) * dyu) * dd_xw((wt(:,:,iz) + 0.)/2, ONES)) / tarea / dzt(:,:,iz) 
+                    advVz(:, :, iz) = advVz(:, :, iz) + WORK
+                    if (debug) advVz_x(:, :, iz) = WORK
+
+                    WORK = mean_xw(mean_ys((umt(:,:,iz) - 0.) * dxu) * dd_ys((wt(:,:,iz) + 0.)/2, ONES)) / tarea / dzt(:,:,iz) 
+                    advVz(:, :, iz) = advVz(:, :, iz) - WORK
+                    if (debug) advVz_y(:, :, iz) = -WORK
+
+                    WORK = mean_ys(dd_xw(wt(:,:,iz) - 0., ONES) * mean_xw((vmt(:,:,iz) + 0.)/2 * dyu)) / tarea / dzt(:,:,iz)
+                    err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) + WORK
+                    if (debug) errnl_wx(:, :, iz) = WORK
+
+                    WORK = mean_xw(dd_ys(wt(:,:,iz) - 0., ONES) * mean_ys((umt(:,:,iz) + 0.)/2 * dxu)) / tarea / dzt(:,:,iz)
+                    err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) - WORK
+                    if (debug) errnl_wy(:, :, iz) = -WORK
+               else
+                    WORK = mean_ys(mean_xw((vmt(:,:,iz) - vmt(:,:,iz+1)) * dyu) * dd_xw((wt(:,:,iz) + wt(:,:,iz+1))/2, ONES)) & 
+                           / tarea / dzt(:,:,iz) 
+                    advVz(:, :, iz) = advVz(:, :, iz) + WORK
+                    if (debug) advVz_x(:, :, iz) = WORK
+
+                    WORK = mean_xw(mean_ys((umt(:,:,iz) - umt(:,:,iz+1)) * dxu) * dd_ys((wt(:,:,iz) + wt(:,:,iz+1))/2, ONES)) & 
+                           / tarea / dzt(:,:,iz) 
+                    advVz(:, :, iz) = advVz(:, :, iz) - WORK
+                    if (debug) advVz_y(:, :, iz) = -WORK
+
+                    WORK = mean_ys(dd_xw(wt(:,:,iz) - wt(:,:,iz+1), ONES) * mean_xw((vmt(:,:,iz) + vmt(:,:,iz+1))/2 * dyu)) &
+                           / tarea / dzt(:,:,iz)
+                    err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) + WORK
+                    if (debug) errnl_wx(:, :, iz) = WORK
+
+                    WORK = mean_xw(dd_ys(wt(:,:,iz) - wt(:,:,iz+1), ONES) * mean_ys((umt(:,:,iz) + umt(:,:,iz+1))/2 * dxu)) &
+                           / tarea / dzt(:,:,iz)
+                    err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) - WORK
+                    if (debug) errnl_wy(:, :, iz) = -WORK
                 endif
             endif
            
-            if ( iz < B%nz) then
-            test1 = (mean_ys(u20du1_zx(:,:,2) - u20du1_zx(:,:,1)) - mean_xw(u20du1_zy(:,:,2) - u20du1_zy(:,:,1))) &
-            / tarea / dzt(:, :, iz)
-            test2 =  (mean_ys(mean_xw((vmt(:,:,iz) - vmt(:,:,iz+1)) * dyu) * dd_xw((wt(:,:,iz) + wt(:,:,iz+1))/2, ONES)) - &
-            mean_xw(mean_ys((umt(:,:,iz) - umt(:,:,iz+1)) * dxu) * dd_ys((wt(:,:,iz) + wt(:,:,iz+1))/2, ONES))) / tarea / dzt(:,:,iz) 
-            test3 =  (mean_ys(dd_xw(wt(:,:,iz) - wt(:,:,iz+1), ONES) * mean_xw((vmt(:,:,iz) + vmt(:,:,iz+1))/2 * dyu)) - &
-            mean_xw(dd_ys(wt(:,:,iz) - wt(:,:,iz+1), ONES) * mean_ys((umt(:,:,iz) + umt(:,:,iz+1))/2 * dxu))) / tarea / dzt(:,:,iz)
-
-            print*, 'w'
-            print*, 'test1:', test1(B%xi_dp, B%yi_dp)
-            print*, 'test2:', test2(B%xi_dp, B%yi_dp)
-            print*, 'test3:', test3(B%xi_dp, B%yi_dp)
-            print*, 'diff', test1(B%xi_dp, B%yi_dp) - test2(B%xi_dp, B%yi_dp) - test3(B%xi_dp, B%yi_dp)       
-            endif 
-            
             u10du2_zx(:,:,2) = u10du2_zx(:,:,1)
             u10du2_zy(:,:,2) = u10du2_zy(:,:,1)
             u20du1_zx(:,:,2) = u20du1_zx(:,:,1)
@@ -853,30 +863,50 @@ module zeta
         advVx = -advVx; advVy = -advVy; advVz = -advVz
 
         where(tmask)
-            advu  = MVALUE
-            advv  = MVALUE
-            advw  = MVALUE
-            advVx = MVALUE
-            advVy = MVALUE
-            advVz = MVALUE
+            advu  = MVALUE; advv  = MVALUE; advw  = MVALUE
+            advVx = MVALUE; advVy = MVALUE; advVz = MVALUE
         endwhere
 
         write(*, fmtm_vor) 'advu: ', advu(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        if (debug) then
+            write(*, fmtm_vor) '  advu_x: ', advu_x(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  advu_y: ', advu_y(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        endif
         write(*, fmtm_vor) 'advv: ', advv(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        if (debug) then
+            write(*, fmtm_vor) '  advv_x: ', advv_x(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  advv_y: ', advv_y(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        endif
         write(*, fmtm_vor) 'advw: ', advw(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-        ! write(*, fmtm_vor) 'rcuv', rcuv(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-        ! write(*, fmtm_vor) 'rcuu', rcuu(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-        ! write(*, fmtm_vor) 'rcvv', rcvv(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-        ! write(*, fmtm_vor) 'rcvu', rcvu(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-        ! write(*, fmtm_vor) 'rcwv', rcwv(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-        ! write(*, fmtm_vor) 'rcwu', rcwu(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        if (debug) then
+            write(*, fmtm_vor) '  advw_x: ', advw_x(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  advw_y: ', advw_y(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        endif
 
         write(*, fmtm_vor) 'advVx: ', advVx(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        if (debug) then
+            write(*, fmtm_vor) '  advVx_x : ', advVx_x(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  errnl_ux: ', errnl_ux(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  advVx_y : ', advVx_y(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  errnl_uy: ', errnl_uy(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        endif
         write(*, fmtm_vor) 'advVy: ', advVy(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        if (debug) then
+            write(*, fmtm_vor) '  advVy_x : ', advVy_x(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  errnl_vx: ', errnl_vx(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  advVy_y : ', advVy_y(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  errnl_vy: ', errnl_vy(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        endif
         write(*, fmtm_vor) 'advVz: ', advVz(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        if (debug) then
+            write(*, fmtm_vor) '  advVz_x : ', advVz_x(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  errnl_wx: ', errnl_wx(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  advVz_y : ', advVz_y(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  errnl_wy: ', errnl_wy(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        endif
 
-        write(*, fmtm_vor) 'advX: ', advu(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped) + advVx(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-        write(*, fmtm_vor) 'advY: ', advv(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped) + advVy(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        ! write(*, fmtm_vor) 'advX: ', advu(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped) + advVx(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        ! write(*, fmtm_vor) 'advY: ', advv(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped) + advVy(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
 
         ! write(*, fmtm_vor) 'vDdivDx', vDdivDx(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         ! write(*, fmtm_vor) 'uDdivDy', uDdivDy(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
@@ -1017,6 +1047,18 @@ module zeta
                      advVx(B%nx, B%ny, B%nz), advVy(B%nx, B%ny, B%nz), advVz(B%nx, B%ny, B%nz), err_nldecomp(B%nx, B%ny, B%nz))
             advu  = 0.; advv  = 0.; advw  = 0.
             advVx = 0.; advVy = 0.; advVz = 0.; err_nldecomp = 0.
+            if (index(func_c, "d-") /= 0) then 
+                allocate(advu_x  (B%nx, B%ny, B%nz), advv_x  (B%nx, B%ny, B%nz), advw_x  (B%nx, B%ny, B%nz), &
+                         advVx_x (B%nx, B%ny, B%nz), advVy_x (B%nx, B%ny, B%nz), advVz_x (B%nx, B%ny, B%nz), &
+                         errnl_ux(B%nx, B%ny, B%nz), errnl_vx(B%nx, B%ny, B%nz), errnl_wx(B%nx, B%ny, B%nz), &
+                         advu_y  (B%nx, B%ny, B%nz), advv_y  (B%nx, B%ny, B%nz), advw_y  (B%nx, B%ny, B%nz), &
+                         advVx_y (B%nx, B%ny, B%nz), advVy_y (B%nx, B%ny, B%nz), advVz_y (B%nx, B%ny, B%nz), &
+                         errnl_uy(B%nx, B%ny, B%nz), errnl_vy(B%nx, B%ny, B%nz), errnl_wy(B%nx, B%ny, B%nz))
+                advu_x = 0.; advv_x = 0; advw_x = 0.; advVx_x = 0.; advVy_x = 0.; advVz_x = 0.
+                errnl_ux = 0.; errnl_vx = 0.; errnl_wx = 0.
+                advu_y = 0.; advv_y = 0; advw_y = 0.; advVx_y = 0.; advVy_y = 0.; advVz_y = 0.;
+                errnl_uy = 0.; errnl_vy = 0.; errnl_wy = 0.  
+            endif                   
         endif
     endsubroutine
 
@@ -1085,6 +1127,10 @@ module zeta
         endif
         if (index(func_c, "d") /= 0) then
             deallocate(advu, advv, advw, advVx, advVy, advVz, err_nldecomp)
+            if (index(func_c, "d-") /= 0) then 
+                deallocate(advu_x, advv_x, advw_x, advVx_x, advVy_x, advVz_x, errnl_ux, errnl_vx, errnl_wx, &
+                           advu_y, advv_y, advw_y, advVx_y, advVy_y, advVz_y, errnl_uy, errnl_vy, errnl_wy)
+           endif
         endif
     endsubroutine
 

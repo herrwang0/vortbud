@@ -48,7 +48,11 @@ module io
                    advu     , advv     , advw     , errnldcmp , &
                    advVx    , advVy    , advVz    , curlmet   , &
                    advum    , advvm    , advwm    , errnldcmpm, &
-                   advVxm   , advVym   , advVzm   , curlmetm
+                   advVxm   , advVym   , advVzm   , curlmetm  , &
+                   advu_x, advv_x, advw_x, advVx_x, advVy_x, advVz_x, &
+                   errnl_ux, errnl_vx, errnl_wx, &
+                   advu_y, advv_y, advw_y, advVx_y, advVy_y, advVz_y, &
+                   errnl_uy, errnl_vy, errnl_wy           
     endtype
 
     !!--------------------------------------------------------------------------
@@ -1280,7 +1284,7 @@ module io
 
         if (index(func, "am") /= 0) then
             stat_defvar = nf90_def_var(ncid_zeta, "curlnonl_m"  ,  nc_xtype, &
-            (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curlnonlc)
+              (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curlnonlc)
             stat_putatt = nf90_put_att(ncid_zeta, varids%curlnonlc, "Units", "1/s^2")
             stat_putatt = nf90_put_att(ncid_zeta, varids%curlnonlc, "coordinates", "TLONG TLAT z_t time")
             stat_putatt = nf90_put_att(ncid_zeta, varids%curlnonlc, "long_name", "Mean curl of nonlinear term offline (rhs)")
@@ -1288,6 +1292,9 @@ module io
         endif
 
         if (index(func, "a") /= 0 .and. index(func, "am") == 0) then
+            stat_defvar = nf90_def_var(ncid_zeta, "curladvc"  ,  nc_xtype, &
+              (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curladvc)
+            stat_putatt = nf90_put_att(ncid_zeta, varids%curladvc, "missing_value", MVALUE)
             if (index(func, "a-") /= 0) then 
                 stat_defvar = nf90_def_var(ncid_zeta, "curladvuc"  ,  nc_xtype, &
                   (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curladvuc)
@@ -1298,10 +1305,6 @@ module io
                 stat_defvar = nf90_def_var(ncid_zeta, "curladvwc"  ,  nc_xtype, &
                   (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curladvwc)
                 stat_putatt = nf90_put_att(ncid_zeta, varids%curladvwc, "missing_value", MVALUE)
-            else
-                stat_defvar = nf90_def_var(ncid_zeta, "curladvc"  ,  nc_xtype, &
-                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curladvc)
-                stat_putatt = nf90_put_att(ncid_zeta, varids%curladvc, "missing_value", MVALUE)
             endif
         endif
 
@@ -1385,6 +1388,45 @@ module io
             stat_putatt = nf90_put_att(ncid_zeta, varids%errnldcmp, "coordinates", "TLONG TLAT z_t time")
             stat_putatt = nf90_put_att(ncid_zeta, varids%errnldcmp, "long_name", "Error from nonlinear term due to decomposition (rhs)")
             stat_putatt = nf90_put_att(ncid_zeta, varids%errnldcmp, "missing_value", MVALUE)
+
+            if (index(func, "d-") /= 0) then
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvu_x"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advu_x)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvu_y"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advu_y)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvv_x"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advv_x)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvv_y"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advv_y)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvw_x"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advw_x)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvw_y"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advw_y)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvVx_x"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advVx_x)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvVx_y"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advVx_y)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvVy_x"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advVy_x)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvVy_y"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advVy_y)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvVz_x"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advVz_x)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvVz_y"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advVz_y)
+                stat_defvar = nf90_def_var(ncid_zeta, "errnl_ux"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnl_uy)
+                stat_defvar = nf90_def_var(ncid_zeta, "errnl_uy"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnl_uy)
+                stat_defvar = nf90_def_var(ncid_zeta, "errnl_vx"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnl_vx)
+                stat_defvar = nf90_def_var(ncid_zeta, "errnl_vy"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnl_vy)
+                stat_defvar = nf90_def_var(ncid_zeta, "errnl_wx"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnl_wx)
+                stat_defvar = nf90_def_var(ncid_zeta, "errnl_wy"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnl_wy)                
+            endif 
         endif
 
         stat_create = nf90_enddef(ncid_zeta)
@@ -1435,16 +1477,15 @@ module io
         endif
 
         if (index(func, "a") /=0 .and. index(func, "am") ==0) then
-            if (index(func, "a-") /=0) then
-            stat_putvar = nf90_put_var(ncid_zeta, varids%curladvuc , curladvu , &
-                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
-            stat_putvar = nf90_put_var(ncid_zeta, varids%curladvvc , curladvv , &
-                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
-            stat_putvar = nf90_put_var(ncid_zeta, varids%curladvwc , curladvw , &
-                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
-            else
             stat_putvar = nf90_put_var(ncid_zeta, varids%curladvc , curladv , &
-                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))                
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))  
+            if (index(func, "a-") /=0) then
+                stat_putvar = nf90_put_var(ncid_zeta, varids%curladvuc , curladvu , &
+                    start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                stat_putvar = nf90_put_var(ncid_zeta, varids%curladvvc , curladvv , &
+                    start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                stat_putvar = nf90_put_var(ncid_zeta, varids%curladvwc , curladvw , &
+                    start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             endif
         endif
 

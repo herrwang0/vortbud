@@ -11,7 +11,7 @@ Program main
     integer :: ncid, iostat
 
     call load_params(func, func_m, func_me)
-    func = "cadme"
+    func = "ca-d-me"
 
     call load_const()
 
@@ -30,7 +30,6 @@ Program main
     ! Calculation
     call calc_zeta(func = func)
     call release_zetavars_input(func = func)
-    call release_zetavars_input(func=func)
 
     ! Output file name and creatation
     call get_yyyymmdd(T%yrlist(iyr), it, &
