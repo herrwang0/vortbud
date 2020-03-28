@@ -5,7 +5,10 @@ module io
                      tlat, tlong, z_t, &
                      curlnonl, betav, stretchp, err_cor, curlpgrad, curlhdiff, curlvdiff, res, &
                      curladv, curlmet, curladvu, curladvv, curladvw, err_nlsub, advu, advv, advw, advVx, advVy, advVz, err_nldecomp, &
-                     curladvf
+                     curladvf, & 
+                     advu_x, advv_x, advw_x, advVx_x, advVy_x, advVz_x, errnl_ux, errnl_vx, errnl_wx, &
+                     advu_y, advv_y, advw_y, advVx_y, advVy_y, advVz_y, errnl_uy, errnl_vy, errnl_wy
+             
     implicit none
     private
     public :: load_params, get_yyyymmdd, loadave_mom_sf, output_sf, load_mean_sf, &
