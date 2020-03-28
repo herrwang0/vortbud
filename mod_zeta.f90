@@ -17,8 +17,11 @@ module zeta
     ! Output variables
     real(kind=kd_r), dimension(:, :, :), allocatable, public :: &
         curlnonl, betav, stretchp, err_cor, curlpgrad, curlhdiff, curlvdiff, res
+    ! real(kind=kd_r), dimension(:, :, :), allocatable, public :: &
+    !     curladv, curlmet, err_nlsub, advu, advv, advw, advVx, advVy, advVz, err_nldecomp, curladvf
     real(kind=kd_r), dimension(:, :, :), allocatable, public :: &
-        curladv, curlmet, err_nlsub, advu, advv, advw, advVx, advVy, advVz, err_nldecomp, curladvf
+        curladv, curlmet, curladvu, curladvv, curladvw, err_nlsub, &
+        advu, advv, advw, advVx, advVy, advVz, err_nldecomp, curladvf
 
     ! Constants and grid info
     real(kind=kd_r), allocatable, public :: tlat(:,:), tlong(:,:), z_t(:)
@@ -48,6 +51,7 @@ module zeta
     !                (nonlinear, curl of pgrad, hdiff, vdiff, residual,
     !                 betav from Coriolis, stretching from Coriolis, error with Coriolis decomposition)
     ! offline adv ("a"): offline calculation of nonlinear advection term (curladv)
+    !   ("a-"): Debug mode, outputting curladvu, curladvv, curladvw instead of curladv
     ! offline met ("m"): offline calculation of nonlinear metric term (curlmet)
     ! decomp adv ("d"): decomposition of nonlinear advection term.
     !   ("d"): flux form twisting term (default)
@@ -90,8 +94,13 @@ module zeta
         if (index(func_c, "a") /= 0) then
             write(*, *)
             write(*, '(A)') '  ---------------------------------------------------'
-            write(*, '(A)') '  Calculating curl of advection term (offline)'
-            call calc_curladv()
+            if (index(func_c, "a-") /= 0) then
+                write(*, '(A)') '  Calculating curl of advection term (offline, w/ u,v,w commponents)'
+                call calc_curladv(.True.)
+            else
+                write(*, '(A)') '  Calculating curl of advection term (offline)'
+                call calc_curladv(.False.)
+            endif
         endif
         if (index(func_c, "d") /= 0) then
             write(*, *)
@@ -470,10 +479,12 @@ module zeta
         ! write(*, fmtm_vor) 'curlmet', curlmet(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
     endsubroutine
 
-    subroutine calc_curladv()
+    subroutine calc_curladv(debug)
         use popfun, only : zcurl
         implicit none
-        real(kind=kd_r), dimension(B%nx, B%ny) :: advx, advy
+        logical, intent(in) :: debug
+        ! real(kind=kd_r), dimension(B%nx, B%ny) :: advx, advy
+        real(kind=kd_r), dimension(B%nx, B%ny) :: advxu, advxv, advxw, advyu, advyv, advyw
         ! real(kind=kd_r), dimension(B%nx, B%ny) :: WORKx, WORKy, WORKz
         integer :: iz
 
@@ -484,27 +495,29 @@ module zeta
         call calc_velw()
 
         do iz = 1, B%nz
-            advx = 0.
-            advy = 0.
-            advx(2:B%nx, 2:B%ny) = (ue(2:B%nx  , 2:B%ny  , iz) * ume (2:B%nx  , 2:B%ny  , iz) - &
-                                    ue(1:B%nx-1, 2:B%ny  , iz) * ume (1:B%nx-1, 2:B%ny  , iz) + &
-                                    vn(2:B%nx  , 2:B%ny  , iz) * umn (2:B%nx  , 2:B%ny  , iz) - &
-                                    vn(2:B%nx  , 1:B%ny-1, iz) * umn (2:B%nx  , 1:B%ny-1, iz))  &
-                                   / dzu(2:B%nx, 2:B%ny, iz) / uarea(2:B%nx, 2:B%ny)            &
-                                   + wt(2:B%nx, 2:B%ny, iz) * umt(2:B%nx, 2:B%ny, iz) / dzu(2:B%nx, 2:B%ny, iz)
+            advxu = 0.; advxv = 0.; advxw = 0. 
+            advyu = 0.; advyv = 0.; advyw = 0. 
+            advxu(2:B%nx, 2:B%ny) = (ue(2:B%nx  , 2:B%ny  , iz) * ume (2:B%nx  , 2:B%ny  , iz) - &
+                                     ue(1:B%nx-1, 2:B%ny  , iz) * ume (1:B%nx-1, 2:B%ny  , iz))  &
+                                    / dzu(2:B%nx, 2:B%ny, iz) / uarea(2:B%nx, 2:B%ny)
+            advxv(2:B%nx, 2:B%ny) = (vn(2:B%nx  , 2:B%ny  , iz) * umn (2:B%nx  , 2:B%ny  , iz) - &
+                                     vn(2:B%nx  , 1:B%ny-1, iz) * umn (2:B%nx  , 1:B%ny-1, iz))  &
+                                    / dzu(2:B%nx, 2:B%ny, iz) / uarea(2:B%nx, 2:B%ny)
+            advxw(2:B%nx, 2:B%ny) = wt(2:B%nx, 2:B%ny, iz) * umt(2:B%nx, 2:B%ny, iz) / dzu(2:B%nx, 2:B%ny, iz)
 
-            advy(2:B%nx, 2:B%ny) = (ue(2:B%nx  , 2:B%ny  , iz) * vme (2:B%nx  , 2:B%ny  , iz) - &
-                                    ue(1:B%nx-1, 2:B%ny  , iz) * vme (1:B%nx-1, 2:B%ny  , iz) + &
-                                    vn(2:B%nx  , 2:B%ny  , iz) * vmn (2:B%nx  , 2:B%ny  , iz) - &
-                                    vn(2:B%nx  , 1:B%ny-1, iz) * vmn (2:B%nx  , 1:B%ny-1, iz))  &
-                                  / dzu(2:B%nx, 2:B%ny, iz) / uarea(2:B%nx, 2:B%ny)            &
-                                   + wt(2:B%nx, 2:B%ny, iz) * vmt(2:B%nx, 2:B%ny, iz) / dzu(2:B%nx, 2:B%ny, iz)
+            advyu(2:B%nx, 2:B%ny) = (ue(2:B%nx  , 2:B%ny  , iz) * vme (2:B%nx  , 2:B%ny  , iz) - &
+                                     ue(1:B%nx-1, 2:B%ny  , iz) * vme (1:B%nx-1, 2:B%ny  , iz))  &
+                                    / dzu(2:B%nx, 2:B%ny, iz) / uarea(2:B%nx, 2:B%ny)
+            advyv(2:B%nx, 2:B%ny) = (vn(2:B%nx  , 2:B%ny  , iz) * vmn (2:B%nx  , 2:B%ny  , iz) - &
+                                     vn(2:B%nx  , 1:B%ny-1, iz) * vmn (2:B%nx  , 1:B%ny-1, iz))  &
+                                    / dzu(2:B%nx, 2:B%ny, iz) / uarea(2:B%nx, 2:B%ny)
+            advyw(2:B%nx, 2:B%ny) = wt(2:B%nx, 2:B%ny, iz) * vmt(2:B%nx, 2:B%ny, iz) / dzu(2:B%nx, 2:B%ny, iz)
 
             if (iz < B%nz) then
-                advx(2:B%nx, 2:B%ny) = advx(2:B%nx, 2:B%ny) &
-                                       - wt(2:B%nx, 2:B%ny, iz+1) * umt(2:B%nx, 2:B%ny, iz+1) / dzu(2:B%nx, 2:B%ny, iz)
-                advy(2:B%nx, 2:B%ny) = advy(2:B%nx, 2:B%ny) &
-                                       - wt(2:B%nx, 2:B%ny, iz+1) * vmt(2:B%nx, 2:B%ny, iz+1) / dzu(2:B%nx, 2:B%ny, iz)
+                advxw(2:B%nx, 2:B%ny) = advxw(2:B%nx, 2:B%ny) &
+                    - wt(2:B%nx, 2:B%ny, iz+1) * umt(2:B%nx, 2:B%ny, iz+1) / dzu(2:B%nx, 2:B%ny, iz)
+                advyw(2:B%nx, 2:B%ny) = advyw(2:B%nx, 2:B%ny) &
+                    - wt(2:B%nx, 2:B%ny, iz+1) * vmt(2:B%nx, 2:B%ny, iz+1) / dzu(2:B%nx, 2:B%ny, iz)
             endif
 
             advx(1, :) = MVALUE
@@ -513,40 +526,26 @@ module zeta
             advy(:, 1) = MVALUE
 
             where(umask(:,:,iz)) ! For cases where dzu = 0.
-                advx = 0.
-                advy = 0.
+                advxu = 0.; advxv = 0.; advxw = 0. 
+                advyu = 0.; advyv = 0.; advyw = 0. 
             endwhere
 
-            curladv(:, :, iz) = zcurl(-advx, -advy, dxu*dzu(:,:,iz), dyu*dzu(:,:,iz), tarea*dzt(:,:,iz))
-            curladv(1, :, iz) = MVALUE
-            curladv(1, :, iz) = MVALUE
+            if (debug) then 
+                curladvu(:, :, iz) = zcurl(-advxu, -advyu, dxu*dzu(:,:,iz), dyu*dzu(:,:,iz), tarea*dzt(:,:,iz))
+                curladvv(:, :, iz) = zcurl(-advxv, -advyv, dxu*dzu(:,:,iz), dyu*dzu(:,:,iz), tarea*dzt(:,:,iz))
+                curladvw(:, :, iz) = zcurl(-advxw, -advyw, dxu*dzu(:,:,iz), dyu*dzu(:,:,iz), tarea*dzt(:,:,iz))
+            endif
 
-            ! if (iz >=  B%zi_dpst .and. iz <= B%zi_dped) then
-            !      write(*, '(A, I02)') '      iz = ',  iz
-            !      WORKx(2:B%nx, 2:B%ny) = (ue(2:B%nx  , 2:B%ny  , iz) * ume (2:B%nx  , 2:B%ny  , iz) - &
-            !               ue(1:B%nx-1, 2:B%ny  , iz) * ume (1:B%nx-1, 2:B%ny  , iz))  &
-            !                        / dzu(2:B%nx, 2:B%ny, iz) / uarea(2:B%nx, 2:B%ny)
-            !
-            !      WORKy(2:B%nx, 2:B%ny) = (ue(2:B%nx  , 2:B%ny  , iz) * vme (2:B%nx  , 2:B%ny  , iz) - &
-            !               ue(1:B%nx-1, 2:B%ny  , iz) * vme (1:B%nx-1, 2:B%ny  , iz))  &
-            !                        / dzu(2:B%nx, 2:B%ny, iz) / uarea(2:B%nx, 2:B%ny)
-            !      WORKz = zcurl(-WORKx, -WORKy, dxu*dzu(:,:,iz), dyu*dzu(:,:,iz), tarea*dzt(:,:,iz))
-            !      write(*, fmts_vor) 'x: ', WORKz(B%xi_dp, B%yi_dp)
-            !
-            !      WORKx(2:B%nx, 2:B%ny) = (vn(2:B%nx  , 2:B%ny  , iz) * umn (2:B%nx  , 2:B%ny  , iz) - &
-            !               vn(2:B%nx  , 1:B%ny-1, iz) * umn (2:B%nx  , 1:B%ny-1, iz))  &
-            !                        / dzu(2:B%nx, 2:B%ny, iz) / uarea(2:B%nx, 2:B%ny)
-            !
-            !      WORKy(2:B%nx, 2:B%ny) = (vn(2:B%nx  , 2:B%ny  , iz) * vmn (2:B%nx  , 2:B%ny  , iz) - &
-            !               vn(2:B%nx  , 1:B%ny-1, iz) * vmn (2:B%nx  , 1:B%ny-1, iz))  &
-            !                        / dzu(2:B%nx, 2:B%ny, iz) / uarea(2:B%nx, 2:B%ny)
-            !      WORKz = zcurl(-WORKx, -WORKy, dxu*dzu(:,:,iz), dyu*dzu(:,:,iz), tarea*dzt(:,:,iz))
-            !      write(*, fmts_vor) 'y: ', WORKz(B%xi_dp, B%yi_dp)
-            !
-            ! endif
+            curladv(:, :, iz) = zcurl(-advxu-advxv-advxw, -advyu-advyu-advyv, &
+                dxu*dzu(:,:,iz), dyu*dzu(:,:,iz), tarea*dzt(:,:,iz))
         enddo
         where(tmask) curladv = MVALUE
+        curladv(1, :, :) = MVALUE
+        curladv(:, 1, :) = MVALUE
 
+        if (debug) then
+            deallocate(curladvu, curladvv, curladvw)
+        endif
         deallocate(ue, vn, wt, ume, vme, umn, vmn, umt, vmt)
         ! write(*, fmtm_vor), 'curladv', curladv(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
     endsubroutine
@@ -1002,8 +1001,15 @@ module zeta
             curlmet = 0.
         endif
         if (index(func_c, "a") /= 0) then
-            allocate(curladv(B%nx, B%ny, B%nz))
-            curladv = 0.
+            if (index(func_c, "a-") /= 0) then
+                allocate(curladvu(B%nx, B%ny, B%nz), &
+                         curladvv(B%nx, B%ny, B%nz), &
+                         curladvw(B%nx, B%ny, B%nz))
+                curladvu = 0.; curladvv = 0.; curladvw = 0.
+            else
+                allocate(curladv(B%nx, B%ny, B%nz))
+                curladv = 0.
+            endif
         endif
         if (index(func_c, "f") /= 0) then
             allocate(curladvf(B%nx, B%ny, B%nz))
@@ -1072,7 +1078,11 @@ module zeta
             deallocate(curlmet)
         endif
         if (index(func_c, "a") /= 0) then
-            deallocate(curladv)
+            if (index(func_c, "a-") /= 0) then
+                deallocate(curladvu, curladvv, curladvw)
+            else
+                deallocate(curladv)
+            endif
         endif
         if (index(func_c, "f") /= 0) then
             deallocate(curladvf)

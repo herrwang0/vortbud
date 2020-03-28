@@ -43,6 +43,7 @@ module io
     type nc_varid
         integer :: curlnonl , betav    , stretchp , errcor    , &
                    curlpgrad, curlhdiff, curlvdiff, res       , &
+                   curladvuc, curladvvc, curladvwc, curladvc  , &
                    curlnonlc, errnlsub ,                        &
                    advu     , advv     , advw     , errnldcmp , &
                    advVx    , advVy    , advVz    , curlmet   , &
@@ -1277,13 +1278,37 @@ module io
             stat_putatt = nf90_put_att(ncid_zeta, varids%errcor   , "missing_value", MVALUE)
         endif
 
-        if (index(func, "a") /= 0) then
+        if (index(func, "am") /= 0) then
             stat_defvar = nf90_def_var(ncid_zeta, "curlnonl_m"  ,  nc_xtype, &
-              (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curlnonlc)
+            (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curlnonlc)
             stat_putatt = nf90_put_att(ncid_zeta, varids%curlnonlc, "Units", "1/s^2")
             stat_putatt = nf90_put_att(ncid_zeta, varids%curlnonlc, "coordinates", "TLONG TLAT z_t time")
             stat_putatt = nf90_put_att(ncid_zeta, varids%curlnonlc, "long_name", "Mean curl of nonlinear term offline (rhs)")
             stat_putatt = nf90_put_att(ncid_zeta, varids%curlnonlc, "missing_value", MVALUE)
+        endif
+
+        if (index(func, "a") /= 0 .and. index(func, "am") == 0) then
+            if (index(func, "a-") /= 0) then 
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvuc"  ,  nc_xtype, &
+                  (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curladvu)
+                stat_putatt = nf90_put_att(ncid_zeta, varids%curladvu, "missing_value", MVALUE)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvvc"  ,  nc_xtype, &
+                  (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curladvv)
+                stat_putatt = nf90_put_att(ncid_zeta, varids%curladvv, "missing_value", MVALUE)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvwc"  ,  nc_xtype, &
+                  (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curladvw)
+                stat_putatt = nf90_put_att(ncid_zeta, varids%curladvw, "missing_value", MVALUE)
+            else
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvc"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curladvc)
+                stat_putatt = nf90_put_att(ncid_zeta, varids%curladvc, "missing_value", MVALUE)
+            endif
+        endif
+
+        if (index(func, "m") /= 0 .and. index(func, "am") == 0) then
+            stat_defvar = nf90_def_var(ncid_zeta, "curlmetc"  ,  nc_xtype, &
+            (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curlmet)
+            stat_putatt = nf90_put_att(ncid_zeta, varids%curlmetc, "missing_value", MVALUE)
         endif
 
         if (index(func, "e") /= 0 .and. T%yrnm_clm /= "") then
@@ -1406,6 +1431,25 @@ module io
 
         if (index(func, "am") /=0) then
             stat_putvar = nf90_put_var(ncid_zeta, varids%curlnonlc , curladv + curlmet , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+        endif
+
+        if (index(func, "a") /=0 .and. index(func, "am") ==0) then
+            if (index(func, "a-") /=0) then
+            stat_putvar = nf90_put_var(ncid_zeta, varids%curladvuc , curladvu , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+            stat_putvar = nf90_put_var(ncid_zeta, varids%curladvvc , curladvv , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+            stat_putvar = nf90_put_var(ncid_zeta, varids%curladvwc , curladvw , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+            else
+            stat_putvar = nf90_put_var(ncid_zeta, varids%curladvc , curladv , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))                
+            endif
+        endif
+
+        if (index(func, "m") /=0 .and. index(func, "am") ==0) then
+            stat_putvar = nf90_put_var(ncid_zeta, varids%curlmet , curlmet , &
                 start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
         endif
 
