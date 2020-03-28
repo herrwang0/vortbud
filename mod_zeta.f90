@@ -423,6 +423,8 @@ module zeta
             write(*, '(A, I02)') '      iz = ',  iz
             write(*, fmts_vor) 'Curlcor: '    , curlcor  (B%xi_dp, B%yi_dp, iz)
             write(*, fmts_vor) 'bv + -fdwdz: ', betav(B%xi_dp, B%yi_dp, iz) + stretchp(B%xi_dp, B%yi_dp, iz)
+            write(*, fmts_vor) 'bv: '         , betav(B%xi_dp, B%yi_dp, iz)
+            write(*, fmts_vor) '-fdwdz: '     , stretchp(B%xi_dp, B%yi_dp, iz)
             write(*, fmts_vor) 'errcor: '     , err_cor(B%xi_dp, B%yi_dp, iz)
             write(*, fmts_vor) 'Diff: '       , curlcor (B%xi_dp, B%yi_dp, iz) - &
                                                 betav   (B%xi_dp, B%yi_dp, iz) - &
@@ -676,7 +678,7 @@ module zeta
 
             test1 = mean_xw(u20du1(:,:,2) - u20du1(:,:,1)) / tarea / dzt(:,:,iz)
             test2 = mean_xw(mean_ys(mean_xw(ume(:,:,iz))/dyu) * dd_xw(dd_ys(ue(:,:,iz), ONES), ONES)) / tarea / dzt(:,:,iz)
-            test3 = mean_xw(mean_ys(mean_xw(ume(:,:,iz))/dyu) * dd_xw(dd_ys(ue(:,:,iz), ONES), ONES)) / tarea / dzt(:,:,iz)
+            test3 = mean_xw(mean_xw(dd_ys(ue(:,:,iz), ONES)) * mean_ys(dd_xw(ume(:,:,iz), dyu))) / tarea / dzt(:,:,iz)
 
             print*, 'd (udu/dy) / dx'
             print*, 'test1:', test1(B%xi_dp, B%yi_dp)
@@ -713,7 +715,7 @@ module zeta
             print*, 'test2:', test2(B%xi_dp, B%yi_dp)
             print*, 'test3:', test3(B%xi_dp, B%yi_dp)
             print*, 'diff', test1(B%xi_dp, B%yi_dp) - test2(B%xi_dp, B%yi_dp) - test3(B%xi_dp, B%yi_dp)
-            print*, 
+            print*, ""
 
             ! d [d(vu)/dy] / dy = d (vdu/dy) / dy + d (udv/dy) / dy
             u1 = vn(:,:,iz)
@@ -742,7 +744,7 @@ module zeta
             print*, 'test2:', test2(B%xi_dp, B%yi_dp)
             print*, 'test3:', test3(B%xi_dp, B%yi_dp)
             print*, 'diff', test1(B%xi_dp, B%yi_dp) - test2(B%xi_dp, B%yi_dp) - test3(B%xi_dp, B%yi_dp)
-            print*, 
+            print*, ""
 
           ! advw
             ! d(wv) / dx  &  d(wu) / dy
@@ -789,11 +791,6 @@ module zeta
                        mean_xw(dd_ys(wt(:,:,iz) - wt(:,:,iz+1), ONES) * mean_ys((umt(:,:,iz) + umt(:,:,iz+1))/2 * dxu))) / tarea / dzt(:,:,iz)
                 endif
             endif
-
-            u10du2_zx(:,:,2) = u10du2_zx(:,:,1)
-            u10du2_zy(:,:,2) = u10du2_zy(:,:,1)
-            u20du1_zx(:,:,2) = u20du1_zx(:,:,1)
-            u20du1_zy(:,:,2) = u20du1_zy(:,:,1)
            
             if ( iz < B%nz) then
             test1 = (mean_ys(u20du1_zx(:,:,2) - u20du1_zx(:,:,1)) - mean_xw(u20du1_zy(:,:,2) - u20du1_zy(:,:,1))) &
@@ -807,9 +804,13 @@ module zeta
             print*, 'test1:', test1(B%xi_dp, B%yi_dp)
             print*, 'test2:', test2(B%xi_dp, B%yi_dp)
             print*, 'test3:', test3(B%xi_dp, B%yi_dp)
-            print*, 'diff', test1(B%xi_dp, B%yi_dp) - test2(B%xi_dp, B%yi_dp) - test3(B%xi_dp, B%yi_dp)
-            print*,       
-            endif      
+            print*, 'diff', test1(B%xi_dp, B%yi_dp) - test2(B%xi_dp, B%yi_dp) - test3(B%xi_dp, B%yi_dp)       
+            endif 
+            
+            u10du2_zx(:,:,2) = u10du2_zx(:,:,1)
+            u10du2_zy(:,:,2) = u10du2_zy(:,:,1)
+            u20du1_zx(:,:,2) = u20du1_zx(:,:,1)
+            u20du1_zy(:,:,2) = u20du1_zy(:,:,1)
 
             ! Add five terms to compose flux of 3D voricity twisting
             if (twif) then 
