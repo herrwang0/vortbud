@@ -520,31 +520,29 @@ module zeta
                     - wt(2:B%nx, 2:B%ny, iz+1) * vmt(2:B%nx, 2:B%ny, iz+1) / dzu(2:B%nx, 2:B%ny, iz)
             endif
 
-            advx(1, :) = MVALUE
-            advx(:, 1) = MVALUE
-            advy(1, :) = MVALUE
-            advy(:, 1) = MVALUE
-
             where(umask(:,:,iz)) ! For cases where dzu = 0.
                 advxu = 0.; advxv = 0.; advxw = 0. 
                 advyu = 0.; advyv = 0.; advyw = 0. 
             endwhere
 
+            curladv(:, :, iz) = zcurl(-advxu-advxv-advxw, -advyu-advyu-advyv, &
+            dxu*dzu(:,:,iz), dyu*dzu(:,:,iz), tarea*dzt(:,:,iz))
             if (debug) then 
                 curladvu(:, :, iz) = zcurl(-advxu, -advyu, dxu*dzu(:,:,iz), dyu*dzu(:,:,iz), tarea*dzt(:,:,iz))
                 curladvv(:, :, iz) = zcurl(-advxv, -advyv, dxu*dzu(:,:,iz), dyu*dzu(:,:,iz), tarea*dzt(:,:,iz))
                 curladvw(:, :, iz) = zcurl(-advxw, -advyw, dxu*dzu(:,:,iz), dyu*dzu(:,:,iz), tarea*dzt(:,:,iz))
             endif
-
-            curladv(:, :, iz) = zcurl(-advxu-advxv-advxw, -advyu-advyu-advyv, &
-                dxu*dzu(:,:,iz), dyu*dzu(:,:,iz), tarea*dzt(:,:,iz))
         enddo
+
         where(tmask) curladv = MVALUE
         curladv(1, :, :) = MVALUE
         curladv(:, 1, :) = MVALUE
-
         if (debug) then
-            deallocate(curladvu, curladvv, curladvw)
+            where(tmask)
+               curladvu = MVALUE; curladvv = MVALUE; curladvw = MVALUE
+            endwhere
+            curladvu(1, :, :) = MVALUE; curladvv(1, :, :) = MVALUE; curladvw(1, :, :) = MVALUE
+            curladvu(:, 1, :) = MVALUE; curladvv(:, 1, :) = MVALUE; curladvw(:, 1, :) = MVALUE
         endif
         deallocate(ue, vn, wt, ume, vme, umn, vmn, umt, vmt)
         ! write(*, fmtm_vor), 'curladv', curladv(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
@@ -1001,14 +999,13 @@ module zeta
             curlmet = 0.
         endif
         if (index(func_c, "a") /= 0) then
+            allocate(curladv(B%nx, B%ny, B%nz))
+            curladv = 0.
             if (index(func_c, "a-") /= 0) then
                 allocate(curladvu(B%nx, B%ny, B%nz), &
                          curladvv(B%nx, B%ny, B%nz), &
                          curladvw(B%nx, B%ny, B%nz))
                 curladvu = 0.; curladvv = 0.; curladvw = 0.
-            else
-                allocate(curladv(B%nx, B%ny, B%nz))
-                curladv = 0.
             endif
         endif
         if (index(func_c, "f") /= 0) then
@@ -1078,10 +1075,9 @@ module zeta
             deallocate(curlmet)
         endif
         if (index(func_c, "a") /= 0) then
+            deallocate(curladv)
             if (index(func_c, "a-") /= 0) then
                 deallocate(curladvu, curladvv, curladvw)
-            else
-                deallocate(curladv)
             endif
         endif
         if (index(func_c, "f") /= 0) then
