@@ -4,7 +4,7 @@ module io
                      ueu, uev, vnu, vnv, wtu, wtv, &
                      tlat, tlong, z_t, &
                      curlnonl, betav, stretchp, err_cor, curlpgrad, curlhdiff, curlvdiff, res, &
-                     curladv, curlmet, err_nlsub, advu, advv, advw, advVx, advVy, advVz, err_nldecomp, &
+                     curladv, curlmet, curladvu, curladvv, curladvw, err_nlsub, advu, advv, advw, advVx, advVy, advVz, err_nldecomp, &
                      curladvf
     implicit none
     private
@@ -1290,14 +1290,14 @@ module io
         if (index(func, "a") /= 0 .and. index(func, "am") == 0) then
             if (index(func, "a-") /= 0) then 
                 stat_defvar = nf90_def_var(ncid_zeta, "curladvuc"  ,  nc_xtype, &
-                  (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curladvu)
-                stat_putatt = nf90_put_att(ncid_zeta, varids%curladvu, "missing_value", MVALUE)
+                  (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curladvuc)
+                stat_putatt = nf90_put_att(ncid_zeta, varids%curladvuc, "missing_value", MVALUE)
                 stat_defvar = nf90_def_var(ncid_zeta, "curladvvc"  ,  nc_xtype, &
-                  (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curladvv)
-                stat_putatt = nf90_put_att(ncid_zeta, varids%curladvv, "missing_value", MVALUE)
+                  (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curladvvc)
+                stat_putatt = nf90_put_att(ncid_zeta, varids%curladvvc, "missing_value", MVALUE)
                 stat_defvar = nf90_def_var(ncid_zeta, "curladvwc"  ,  nc_xtype, &
-                  (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curladvw)
-                stat_putatt = nf90_put_att(ncid_zeta, varids%curladvw, "missing_value", MVALUE)
+                  (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curladvwc)
+                stat_putatt = nf90_put_att(ncid_zeta, varids%curladvwc, "missing_value", MVALUE)
             else
                 stat_defvar = nf90_def_var(ncid_zeta, "curladvc"  ,  nc_xtype, &
                 (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curladvc)
@@ -1308,7 +1308,7 @@ module io
         if (index(func, "m") /= 0 .and. index(func, "am") == 0) then
             stat_defvar = nf90_def_var(ncid_zeta, "curlmetc"  ,  nc_xtype, &
             (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%curlmet)
-            stat_putatt = nf90_put_att(ncid_zeta, varids%curlmetc, "missing_value", MVALUE)
+            stat_putatt = nf90_put_att(ncid_zeta, varids%curlmet, "missing_value", MVALUE)
         endif
 
         if (index(func, "e") /= 0 .and. T%yrnm_clm /= "") then
