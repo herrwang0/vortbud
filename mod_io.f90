@@ -1418,7 +1418,7 @@ module io
                 stat_defvar = nf90_def_var(ncid_zeta, "curladvVz_y"  ,  nc_xtype, &
                 (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advVz_y)
                 stat_defvar = nf90_def_var(ncid_zeta, "errnl_ux"  ,  nc_xtype, &
-                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnl_uy)
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnl_ux)
                 stat_defvar = nf90_def_var(ncid_zeta, "errnl_uy"  ,  nc_xtype, &
                 (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnl_uy)
                 stat_defvar = nf90_def_var(ncid_zeta, "errnl_vx"  ,  nc_xtype, &
@@ -1519,6 +1519,82 @@ module io
                 start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
             stat_putvar = nf90_put_var(ncid_zeta, varids%errnldcmp, err_nldecomp, &
                 start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+            
+            if (index(func, "d-") /= 0) then
+                stat_putvar = nf90_put_var(ncid_zeta, varids%advu_x     , advu_x        , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                stat_putvar = nf90_put_var(ncid_zeta, varids%advu_y     , advu_y        , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                stat_putvar = nf90_put_var(ncid_zeta, varids%advv_x     , advv_x        , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                stat_putvar = nf90_put_var(ncid_zeta, varids%advv_y     , advv_y        , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                stat_putvar = nf90_put_var(ncid_zeta, varids%advw_x     , advw_x        , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                stat_putvar = nf90_put_var(ncid_zeta, varids%advw_y     , advw_y        , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                stat_putvar = nf90_put_var(ncid_zeta, varids%advVx_x    , advVx_x       , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                stat_putvar = nf90_put_var(ncid_zeta, varids%advVx_y    , advVx_y       , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                stat_putvar = nf90_put_var(ncid_zeta, varids%advVy_x    , advVy_x       , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                stat_putvar = nf90_put_var(ncid_zeta, varids%advVy_y    , advVy_y       , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                stat_putvar = nf90_put_var(ncid_zeta, varids%advVz_x    , advVz_x       , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                stat_putvar = nf90_put_var(ncid_zeta, varids%advVz_y    , advVz_y       , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                stat_putvar = nf90_put_var(ncid_zeta, varids%errnl_ux   , errnl_ux      , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                stat_putvar = nf90_put_var(ncid_zeta, varids%errnl_uy   , errnl_uy      , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                stat_putvar = nf90_put_var(ncid_zeta, varids%errnl_vx   , errnl_vx      , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                stat_putvar = nf90_put_var(ncid_zeta, varids%errnl_vy   , errnl_vy      , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                stat_putvar = nf90_put_var(ncid_zeta, varids%errnl_wx   , errnl_wx      , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                stat_putvar = nf90_put_var(ncid_zeta, varids%errnl_wy   , errnl_wy      , &
+                start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvu_x"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advu_x)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvu_y"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advu_y)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvv_x"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advv_x)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvv_y"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advv_y)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvw_x"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advw_x)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvw_y"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advw_y)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvVx_x"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advVx_x)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvVx_y"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advVx_y)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvVy_x"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advVy_x)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvVy_y"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advVy_y)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvVz_x"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advVz_x)
+                stat_defvar = nf90_def_var(ncid_zeta, "curladvVz_y"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%advVz_y)
+                stat_defvar = nf90_def_var(ncid_zeta, "errnl_ux"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnl_uy)
+                stat_defvar = nf90_def_var(ncid_zeta, "errnl_uy"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnl_uy)
+                stat_defvar = nf90_def_var(ncid_zeta, "errnl_vx"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnl_vx)
+                stat_defvar = nf90_def_var(ncid_zeta, "errnl_vy"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnl_vy)
+                stat_defvar = nf90_def_var(ncid_zeta, "errnl_wx"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnl_wx)
+                stat_defvar = nf90_def_var(ncid_zeta, "errnl_wy"  ,  nc_xtype, &
+                (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), varids%errnl_wy)                
+            endif 
         endif
         write(*, '(A)') '  Finished writing'
     endsubroutine
