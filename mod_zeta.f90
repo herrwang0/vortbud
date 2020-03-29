@@ -398,8 +398,8 @@ module zeta
         endwhere
         curlnonl(1,:,:) = MVALUE; curlcor(1,:,:) = MVALUE; curlpgrad(1,:,:) = MVALUE; 
         curlhdiff(1,:,:) = MVALUE; curlvdiff(1,:,:) = MVALUE; res(1,:,:) = MVALUE;
-        curlnonl(:,1,:) = MVALUE; curlcor(:,1:,) = MVALUE; curlpgrad(:,1:,) = MVALUE; 
-        curlhdiff(:,1:,) = MVALUE; curlvdiff(:,1:,) = MVALUE; res(:,1:,) = MVALUE;
+        curlnonl(:,1,:) = MVALUE; curlcor(:,1,:) = MVALUE; curlpgrad(:,1,:) = MVALUE; 
+        curlhdiff(:,1,:) = MVALUE; curlvdiff(:,1,:) = MVALUE; res(:,1,:) = MVALUE;
 
         write(*, fmtm_vor) 'curlnonl: ' , curlnonl (B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         write(*, fmtm_vor) 'curlcor: '  , curlcor  (B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
@@ -1168,7 +1168,7 @@ module zeta
         endif
         if (index(func_c, "d") /= 0) then
             deallocate(advu, advv, advw, advVx, advVy, advVz, err_nldecomp)
-            if (index(func_c, "d-") /= 0 .or index(func_c, "d#-") /= 0) then 
+            if (index(func_c, "d-") /= 0 .or. index(func_c, "d#-") /= 0) then 
                 deallocate(advu_x, advv_x, advw_x, advVx_x, advVy_x, advVz_x, errnl_ux, errnl_vx, errnl_wx, &
                            advu_y, advv_y, advw_y, advVx_y, advVy_y, advVz_y, errnl_uy, errnl_vy, errnl_wy)
            endif
