@@ -435,7 +435,7 @@ module zeta
             err_cor  = MVALUE
         endwhere
         betav(1,:,:) = MVALUE; stretchp(1,:,:) = MVALUE; err_cor(1,:,:) = MVALUE;
-        betav(:,1,:) = MVALUE; stretchp(:,1:,) = MVALUE; err_cor(:,1:,) = MVALUE; 
+        betav(:,1,:) = MVALUE; stretchp(:,1,:) = MVALUE; err_cor(:,1,:) = MVALUE; 
 
         !!----------------------------------------------------------------------
         ! Verifying decomposition and clean up
