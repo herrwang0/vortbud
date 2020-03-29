@@ -106,22 +106,18 @@ module zeta
         if (index(func_c, "d") /= 0) then
             write(*, *)
             write(*, '(A)') '  ---------------------------------------------------'
-            if (index(func_c, "d#") /= 0) then
-                if (index(func_c, "d#-") /= 0) then
-                    write(*, '(A)') '  Decomposing curl of advection term (w/ nonflux twisting term, w/ subcomponents)'
-                    call decomp_curladv(.False., .True.)
-                else
-                    write(*, '(A)') '  Decomposing curl of advection term (w/ nonflux twisting term)'
-                    call decomp_curladv(.False., .False.)
-                endif
+            if (index(func_c, "d#-") /= 0 .or. index(func_c, "d-#") /= 0) then
+                write(*, '(A)') '  Decomposing curl of advection term (w/ nonflux twisting term, w/ subcomponents)'
+                call decomp_curladv(.False., .True.)
+            elseif (index(func_c, "d-") /= 0 .or. index(func_c, "d-#") == 0) then
+                write(*, '(A)') '  Decomposing curl of advection term (w/ flux twisting term, w/ subcomponents)'
+                call decomp_curladv(.True., .True.)
+            elseif (index(func_c, "d#") /= 0 .or. index(func_c, "d#-") == 0) then
+                write(*, '(A)') '  Decomposing curl of advection term (w/ nonflux twisting term)'
+                call decomp_curladv(.False., .False.)
             else
-                if (index(func_c, "d-") /= 0) then
-                    write(*, '(A)') '  Decomposing curl of advection term (w/ flux twisting term, w/ subcomponents)'
-                    call decomp_curladv(.True., .True.)
-                else
-                    write(*, '(A)') '  Decomposing curl of advection term (w/ flux twisting term)'
-                    call decomp_curladv(.True., .False.)
-                endif
+                write(*, '(A)') '  Decomposing curl of advection term (w/ flux twisting term)'
+                call decomp_curladv(.True., .False.)
             endif
         endif
         if (index(func_c, "e") /= 0) then
@@ -400,6 +396,10 @@ module zeta
             curlvdiff = MVALUE
             res       = MVALUE
         endwhere
+        curlnonl(1,:,:) = MVALUE; curlcor(1,:,:) = MVALUE; curlpgrad(1,:,:) = MVALUE; 
+        curlhdiff(1,:,:) = MVALUE; curlvdiff(1,:,:) = MVALUE; res(1,:,:) = MVALUE;
+        curlnonl(:,1,:) = MVALUE; curlcor(:,1:,) = MVALUE; curlpgrad(:,1:,) = MVALUE; 
+        curlhdiff(:,1:,) = MVALUE; curlvdiff(:,1:,) = MVALUE; res(:,1:,) = MVALUE;
 
         write(*, fmtm_vor) 'curlnonl: ' , curlnonl (B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         write(*, fmtm_vor) 'curlcor: '  , curlcor  (B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
@@ -434,6 +434,8 @@ module zeta
             stretchp = MVALUE
             err_cor  = MVALUE
         endwhere
+        betav(1,:,:) = MVALUE; stretchp(1,:,:) = MVALUE; err_cor(1,:,:) = MVALUE;
+        betav(:,1,:) = MVALUE; stretchp(:,1:,) = MVALUE; err_cor(:,1:,) = MVALUE; 
 
         !!----------------------------------------------------------------------
         ! Verifying decomposition and clean up
@@ -494,9 +496,7 @@ module zeta
         use popfun, only : zcurl
         implicit none
         logical, intent(in) :: debug
-        ! real(kind=kd_r), dimension(B%nx, B%ny) :: advx, advy
         real(kind=kd_r), dimension(B%nx, B%ny) :: advxu, advxv, advxw, advyu, advyv, advyw
-        ! real(kind=kd_r), dimension(B%nx, B%ny) :: WORKx, WORKy, WORKz
         integer :: iz
 
         ! Calculating derived velocity at walls
@@ -536,8 +536,8 @@ module zeta
                 advyu = 0.; advyv = 0.; advyw = 0. 
             endwhere
 
-            curladv(:, :, iz) = zcurl(-advxu-advxv-advxw, -advyu-advyu-advyv, &
-            dxu*dzu(:,:,iz), dyu*dzu(:,:,iz), tarea*dzt(:,:,iz))
+            curladv(:, :, iz) = zcurl(-advxu-advxv-advxw, -advyu-advyv-advyw, &
+                dxu*dzu(:,:,iz), dyu*dzu(:,:,iz), tarea*dzt(:,:,iz))
             if (debug) then 
                 curladvu(:, :, iz) = zcurl(-advxu, -advyu, dxu*dzu(:,:,iz), dyu*dzu(:,:,iz), tarea*dzt(:,:,iz))
                 curladvv(:, :, iz) = zcurl(-advxv, -advyv, dxu*dzu(:,:,iz), dyu*dzu(:,:,iz), tarea*dzt(:,:,iz))
@@ -736,9 +736,15 @@ module zeta
             ! d [d(vu)/dy] / dy = d (vdu/dy) / dy + d (udv/dy) / dy
             u1 = vn(:,:,iz)
             u2 = umn(:,:,iz)/dyu
+            where (umask(:,:,iz))
+                u1 = 0.; u2 = 0.
+            endwhere
             call dd_ys_chain(u1, mean_ys(u1), u2, mean_ys(u2), ONES, u10du2(:,:,2), u20du1(:,:,2))
             u1 = shift_yn(vn(:,:,iz))
             u2 = shift_yn(umn(:,:,iz))/dyu
+            where (umask(:,:,iz))
+                u1 = 0.; u2 = 0.
+            endwhere
             call dd_ys_chain(u1, mean_ys(u1), u2, mean_ys(u2), ONES, u10du2(:,:,1), u20du1(:,:,1))
             WORK = mean_xw(u10du2(:,:,2) - u10du2(:,:,1)) / tarea / dzt(:,:,iz)
             advv(:, :, iz) = advv(:, :, iz) - WORK
@@ -757,18 +763,16 @@ module zeta
                 if (debug) errnl_vy(:, :, iz) = -WORK
             endif
 
-          ! advw
+          ! advw  
             ! d(wv) / dx  &  d(wu) / dy
-            if (iz == 1) then
-                u1 = wt(:,:,iz)
-                u2 = vmt(:,:,iz)*dyu
-                where (umask(:,:,iz)) u1 = 0.
-                where (umask(:,:,iz)) u2 = 0.
-                call dd_xw_chain(u1, mean_xw(u1), u2, mean_xw(u2), ONES, u10du2_zx(:,:,2), u20du1_zx(:,:,2))
-                u2 = umt(:,:,iz)*dxu
-                where (umask(:,:,iz)) u2 = 0.
-                call dd_ys_chain(u1, mean_ys(u1), u2, mean_ys(u2), ONES, u10du2_zy(:,:,2), u20du1_zy(:,:,2))
-            endif
+            u1 = wt(:,:,iz)
+            u2 = vmt(:,:,iz)*dyu
+            where (umask(:,:,iz)) u1 = 0.
+            where (umask(:,:,iz)) u2 = 0.
+            call dd_xw_chain(u1, mean_xw(u1), u2, mean_xw(u2), ONES, u10du2_zx(:,:,2), u20du1_zx(:,:,2))
+            u2 = umt(:,:,iz)*dxu
+            where (umask(:,:,iz)) u2 = 0.
+            call dd_ys_chain(u1, mean_ys(u1), u2, mean_ys(u2), ONES, u10du2_zy(:,:,2), u20du1_zy(:,:,2))
 
             if (iz == B%nz) then
                 u10du2_zx(:,:,1) = 0.
@@ -778,7 +782,7 @@ module zeta
             else
                 u1 = wt(:,:,iz+1)
                 u2 = vmt(:,:,iz+1)*dyu
-                where (umask(:,:,iz)) u1 = 0.
+                where (umask(:,:,iz)) u1 = 0. ! We cannnot step down and reuse last layer's bottom interface as the masks differ
                 where (umask(:,:,iz)) u2 = 0.
                 call dd_xw_chain(u1, mean_xw(u1), u2, mean_xw(u2), ONES, u10du2_zx(:,:,1), u20du1_zx(:,:,1))
                 u2 = umt(:,:,iz+1)*dxu
@@ -841,11 +845,6 @@ module zeta
                     if (debug) errnl_wy(:, :, iz) = -WORK
                 endif
             endif
-           
-            u10du2_zx(:,:,2) = u10du2_zx(:,:,1)
-            u10du2_zy(:,:,2) = u10du2_zy(:,:,1)
-            u20du1_zx(:,:,2) = u20du1_zx(:,:,1)
-            u20du1_zy(:,:,2) = u20du1_zy(:,:,1)
 
             ! Add five terms to compose flux of 3D voricity twisting
             if (twif) then 
@@ -1089,7 +1088,7 @@ module zeta
                      advVx(B%nx, B%ny, B%nz), advVy(B%nx, B%ny, B%nz), advVz(B%nx, B%ny, B%nz), err_nldecomp(B%nx, B%ny, B%nz))
             advu  = 0.; advv  = 0.; advw  = 0.
             advVx = 0.; advVy = 0.; advVz = 0.; err_nldecomp = 0.
-            if (index(func_c, "d-") /= 0) then 
+            if (index(func_c, "d-") /= 0 .or. index(func_c, "d#-") /= 0) then 
                 allocate(advu_x  (B%nx, B%ny, B%nz), advv_x  (B%nx, B%ny, B%nz), advw_x  (B%nx, B%ny, B%nz), &
                          advVx_x (B%nx, B%ny, B%nz), advVy_x (B%nx, B%ny, B%nz), advVz_x (B%nx, B%ny, B%nz), &
                          errnl_ux(B%nx, B%ny, B%nz), errnl_vx(B%nx, B%ny, B%nz), errnl_wx(B%nx, B%ny, B%nz), &
@@ -1169,7 +1168,7 @@ module zeta
         endif
         if (index(func_c, "d") /= 0) then
             deallocate(advu, advv, advw, advVx, advVy, advVz, err_nldecomp)
-            if (index(func_c, "d-") /= 0) then 
+            if (index(func_c, "d-") /= 0 .or index(func_c, "d#-") /= 0) then 
                 deallocate(advu_x, advv_x, advw_x, advVx_x, advVy_x, advVz_x, errnl_ux, errnl_vx, errnl_wx, &
                            advu_y, advv_y, advw_y, advVx_y, advVy_y, advVz_y, errnl_uy, errnl_vy, errnl_wy)
            endif
