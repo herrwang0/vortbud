@@ -546,14 +546,18 @@ module zeta
         enddo
 
         where(tmask) curladv = MVALUE
-        curladv(1, :, :) = MVALUE
-        curladv(:, 1, :) = MVALUE
+        curladv(1:2, :, :) = MVALUE  ! advxu/v, advyu/v, advwu/v at ix = 1 and iy = 1 is NaN, 
+        curladv(:, 1:2, :) = MVALUE  !   which are needed for curl at ix = 2 and iy = 2
+        curladv(B%nx, :, :) = MVALUE ! ue, vn at ix = nx and iy = ny is NaN
+        curladv(:, B%ny, :) = MVALUE
         if (debug) then
             where(tmask)
                curladvu = MVALUE; curladvv = MVALUE; curladvw = MVALUE
             endwhere
-            curladvu(1, :, :) = MVALUE; curladvv(1, :, :) = MVALUE; curladvw(1, :, :) = MVALUE
-            curladvu(:, 1, :) = MVALUE; curladvv(:, 1, :) = MVALUE; curladvw(:, 1, :) = MVALUE
+            curladvu(1:2, :, :) = MVALUE; curladvv(1:2, :, :) = MVALUE; curladvw(1:2, :, :) = MVALUE
+            curladvu(:, 1:2, :) = MVALUE; curladvv(:, 1:2, :) = MVALUE; curladvw(:, 1:2, :) = MVALUE
+            curladvu(B%nx, :, :) = MVALUE; curladvv(B%nx, :, :) = MVALUE; curladvw(B%nx, :, :) = MVALUE
+            curladvu(:, B%ny, :) = MVALUE; curladvv(:, B%ny, :) = MVALUE; curladvw(:, B%ny, :) = MVALUE
         endif
         deallocate(ue, vn, wt, ume, vme, umn, vmn, umt, vmt)
         ! write(*, fmtm_vor), 'curladv', curladv(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
@@ -608,7 +612,7 @@ module zeta
 
             curladvf(:, :, iz) = zcurl(-advx, -advy, dxu*dzu(:,:,iz), dyu*dzu(:,:,iz), tarea*dzt(:,:,iz))
             curladvf(1, :, iz) = MVALUE
-            curladvf(1, :, iz) = MVALUE
+            curladvf(:, 1, iz) = MVALUE
         enddo
     endsubroutine
 
@@ -640,9 +644,15 @@ module zeta
             ! d [d(uv)/dx] / dx = d (udv/dx) / dx + d (vdu/dx) / dx
             u1 = ue(:,:,iz)
             u2 = vme(:,:,iz)/dxu
+            where (umask(:,:,iz))
+                u1 = 0.; u2 = 0.
+            endwhere
             call dd_xw_chain(u1, mean_xw(u1), u2, mean_xw(u2), ONES, u10du2(:,:,2), u20du1(:,:,2))
             u1 = shift_xe(ue(:,:,iz))
             u2 = shift_xe(vme(:,:,iz))/dxu
+            where (umask(:,:,iz))
+                u1 = 0.; u2 = 0.
+            endwhere
             call dd_xw_chain(u1, mean_xw(u1), u2, mean_xw(u2), ONES, u10du2(:,:,1), u20du1(:,:,1))
 
             WORK = mean_ys(u10du2(:,:,2) - u10du2(:,:,1)) / tarea / dzt(:,:,iz)
@@ -665,9 +675,15 @@ module zeta
             ! d [d(uu)/dy] / dx = d (udu/dy) / dx + d (udu/dy) / dx
             u1 = ue(:,:,iz)
             u2 = ume(:,:,iz)/dyu
+            where (umask(:,:,iz))
+                u1 = 0.; u2 = 0.
+            endwhere            
             call dd_ys_chain(u1, mean_ys(u1), u2, mean_ys(u2), ONES, u10du2(:,:,2), u20du1(:,:,2))
             u1 = shift_xe(ue(:,:,iz))
             u2 = shift_xe(ume(:,:,iz))/dyu
+            where (umask(:,:,iz))
+                u1 = 0.; u2 = 0.
+            endwhere
             call dd_ys_chain(u1, mean_ys(u1), u2, mean_ys(u2), ONES, u10du2(:,:,1), u20du1(:,:,1))
             WORK = mean_xw(u10du2(:,:,2) - u10du2(:,:,1)) / tarea / dzt(:,:,iz)
             advu(:, :, iz) = advu(:, :, iz) - WORK
@@ -676,7 +692,7 @@ module zeta
             if (twif) then
                 WORK = mean_xw(u20du1(:,:,2) - u20du1(:,:,1)) / tarea / dzt(:,:,iz)
                 advVx(:, :, iz) = advVx(:, :, iz) - WORK
-                if (debug) advu_y(:, :, iz) = -WORK
+                if (debug) advVx_y(:, :, iz) = -WORK
             else
                 WORK = mean_xw(mean_xw(dd_ys(ue(:,:,iz), ONES)) * mean_ys(dd_xw(ume(:,:,iz), dyu))) / tarea / dzt(:,:,iz)
                 advVx(:, :, iz) = advVx(:, :, iz) - WORK
@@ -690,9 +706,15 @@ module zeta
             ! d [d(vv)/dx] / dy = d (vdvdx) / dy + d (vdvdx) / dy
             u1 = vn(:,:,iz)
             u2 = vmn(:,:,iz)/dxu
+            where (umask(:,:,iz))
+                u1 = 0.; u2 = 0.
+            endwhere
             call dd_xw_chain(u1, mean_xw(u1), u2, mean_xw(u2), ONES, u10du2(:,:,2), u20du1(:,:,2))
             u1 = shift_yn(vn(:,:,iz))
             u2 = shift_yn(vmn(:,:,iz))/dxu
+            where (umask(:,:,iz))
+                u1 = 0.; u2 = 0.
+            endwhere
             call dd_xw_chain(u1, mean_xw(u1), u2, mean_xw(u2), ONES, u10du2(:,:,1), u20du1(:,:,1))
             WORK = mean_ys(u10du2(:,:,2) - u10du2(:,:,1)) / tarea / dzt(:,:,iz)
             advv(:, :, iz) = advv(:, :, iz) + WORK
@@ -740,8 +762,11 @@ module zeta
             if (iz == 1) then
                 u1 = wt(:,:,iz)
                 u2 = vmt(:,:,iz)*dyu
+                where (umask(:,:,iz)) u1 = 0.
+                where (umask(:,:,iz)) u2 = 0.
                 call dd_xw_chain(u1, mean_xw(u1), u2, mean_xw(u2), ONES, u10du2_zx(:,:,2), u20du1_zx(:,:,2))
                 u2 = umt(:,:,iz)*dxu
+                where (umask(:,:,iz)) u2 = 0.
                 call dd_ys_chain(u1, mean_ys(u1), u2, mean_ys(u2), ONES, u10du2_zy(:,:,2), u20du1_zy(:,:,2))
             endif
 
@@ -753,8 +778,11 @@ module zeta
             else
                 u1 = wt(:,:,iz+1)
                 u2 = vmt(:,:,iz+1)*dyu
+                where (umask(:,:,iz)) u1 = 0.
+                where (umask(:,:,iz)) u2 = 0.
                 call dd_xw_chain(u1, mean_xw(u1), u2, mean_xw(u2), ONES, u10du2_zx(:,:,1), u20du1_zx(:,:,1))
                 u2 = umt(:,:,iz+1)*dxu
+                where (umask(:,:,iz)) u2 = 0.
                 call dd_ys_chain(u1, mean_ys(u1), u2, mean_ys(u2), ONES, u10du2_zy(:,:,1), u20du1_zy(:,:,1))
             endif
 
@@ -773,7 +801,7 @@ module zeta
 
                 WORK = mean_xw(u20du1_zy(:,:,2) - u20du1_zy(:,:,1)) / tarea / dzt(:, :, iz)
                 advVz(:, :, iz) = advVz(:, :, iz) - WORK
-                if (debug) advVz_y(:, :, iz) = WORK
+                if (debug) advVz_y(:, :, iz) = -WORK
             else
                 if (iz == B%nz) then
                     WORK = mean_ys(mean_xw((vmt(:,:,iz) - 0.) * dyu) * dd_xw((wt(:,:,iz) + 0.)/2, ONES)) / tarea / dzt(:,:,iz) 
@@ -866,6 +894,20 @@ module zeta
             advu  = MVALUE; advv  = MVALUE; advw  = MVALUE
             advVx = MVALUE; advVy = MVALUE; advVz = MVALUE
         endwhere
+        advu (1:2, :, :) = MVALUE; advv (1:2, :, :) = MVALUE; advw (1:2, :, :) = MVALUE
+        advVx(1:2, :, :) = MVALUE; advVy(1:2, :, :) = MVALUE; advVz(1:2, :, :) = MVALUE
+        advu (:, 1:2, :) = MVALUE; advv (:, 1:2, :) = MVALUE; advw (:, 1:2, :) = MVALUE
+        advVx(:, 1:2, :) = MVALUE; advVy(:, 1:2, :) = MVALUE; advVz(:, 1:2, :) = MVALUE
+        advu (B%nx, :, :) = MVALUE; advv (B%nx, :, :) = MVALUE; advw (B%nx, :, :) = MVALUE
+        advVx(B%nx, :, :) = MVALUE; advVy(B%nx, :, :) = MVALUE; advVz(B%nx, :, :) = MVALUE
+        advu (:, B%ny, :) = MVALUE; advv (:, B%ny, :) = MVALUE; advw (:, B%ny, :) = MVALUE
+        advVx(:, B%ny, :) = MVALUE; advVy(:, B%ny, :) = MVALUE; advVz(:, B%ny, :) = MVALUE
+
+        if (twif) then
+            where(tmask) err_nldecomp = MVALUE
+            err_nldecomp(1:2, :, :) = MVALUE; err_nldecomp(B%nx, :, :) = MVALUE
+            err_nldecomp(:, 1:2, :) = MVALUE; err_nldecomp(:, B%nx, :) = MVALUE
+        endif 
 
         write(*, fmtm_vor) 'advu: ', advu(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         if (debug) then
