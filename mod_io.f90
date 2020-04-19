@@ -225,7 +225,7 @@ module io
             func_m = ""
             func_me = ""
             if (ifmeaneddy .and. .not. ifmeanclm) then
-                write(*, '(A)') "  Warning: input files are climatology and 'ifmeanclm' is by definiation turned on for mean/eddy decomposition."
+                write(*, '(A)') "  WARNING: input files are climatology and 'ifmeanclm' is by definiation turned on for mean/eddy decomposition."
                 write(*, *)
                 ifmeanclm = .True.
             endif
@@ -292,7 +292,7 @@ module io
             func_m = ""
             func_me = ""
             if (ifmeaneddy) then
-                write(*,'(A)') "  Warning: Cannot do mean/eddy decomposition without curl of momentum equation."
+                write(*,'(A)') "  WARNING: Cannot do mean/eddy decomposition without curl of momentum equation."
             endif
         endif
 
@@ -382,7 +382,7 @@ module io
         !    Translate mnlist and dalist to doylist (day of year)
         !-------------------------------------------
         ! Annual mean: doy_list = (/ 0 /)
-        ! Monthly mean: doy_list = (/ -first day of the month /)
+        ! Monthly mean: doy_list = (/ -number of the month /)
         ! Daily mean: doy_list = doy
         idoy = 0
         do imn = 1, nmn, 1
@@ -390,7 +390,7 @@ module io
                if (mnlist(imn) > 0 .and. dalist(ida) > eom(mnlist(imn))) exit
                idoy = idoy + 1
                if (dalist(ida) == 0 .and. mnlist(imn) /= 0) then
-                   doylist_full(idoy) = -(1 + sum(eom(1:mnlist(imn)-1)))
+                   doylist_full(idoy) = -mnlist(imn)
                else
                    doylist_full(idoy) = dalist(ida) + sum(eom(1:mnlist(imn)-1))
               endif
@@ -404,59 +404,93 @@ module io
         !    Translate doylist to seclist
         !-------------------------------------------
         ! The main loop is through doylist, which is further devided into "sec" (sections).
-        ! When mean/eddy decomposition is turned on, secs are based on the frequency/period。
-        ! A sanity check will be needed to compare doylist and sections.
+        ! When mean/eddy decomposition is turned on, secs are based on its frequency/period.
+        ! For daily input:
+        !   seclist overrides doylist with "m", "a", secst/seced and seclist_in_st/ed options.
+        !   It uses min(doyslist) and max(doylist) as lower and upper bounds with nda_sec option
+        ! For monthly input:
+        !   Only "a" and "m" options are accepted. Other options are invalid.
+        !   seclist overrides doylist with "a" option, using the full 12 month. 
+        ! For annual input:
+        !   Only "a" option is accepted. 
         if (trim(func_me)=="") then
             T%nsec = T%ndoy
             allocate(T%seclist(T%nsec, 2))
             T%seclist(:, 1) = (/ (T%doylist(ida), ida = 1, T%ndoy) /)
             T%seclist(:, 2) = T%seclist(:, 1)
         else
-            if (meanfreq=="m") then
-                T%nsec = size(mnlist)
-                allocate(T%seclist(T%nsec, 2))
-                allocate(T%meannm(T%nsec))
-                do isec = 1, T%nsec
-                    T%seclist(isec, 1) = 1 + sum(eom(1:mnlist(isec)-1))
-                    T%seclist(isec, 2) = sum(eom(1:mnlist(isec)))
-                    write(T%meannm(isec), '(I0.2)') mnlist(isec)
-                enddo
-            elseif (meanfreq=="a") then
-                T%nsec = 1
-                allocate(T%seclist(T%nsec, 2))
-                allocate(T%meannm(T%nsec))
-                T%seclist(1, 1) = 1
-                T%seclist(1, 2) = 365
-                write(T%meannm(1), '(A)') 'ann'
-            elseif (count(seclist_in_st/=0) /= 0 .and. all(seclist_in_st >= 0) .and. &
-                    count(seclist_in_ed/=0) /= 0 .and. all(seclist_in_ed >= 0)) then
-                T%nsec = min(count(seclist_in_st/=0), count(seclist_in_ed/=0))
-                allocate(T%seclist(T%nsec, 2))
-                allocate(T%meannm(T%nsec))
-                do isec = 1, T%nsec
-                    T%seclist(isec, 1) = seclist_in_st(isec)
-                    T%seclist(isec, 2) = seclist_in_ed(isec)
-                    write(T%meannm(isec), '(A, I0.3, A, I0.3)') 'd', T%seclist(isec, 1), '-', T%seclist(isec, 2)
-                enddo
-            elseif (seced >= secst /= 0 .and. secst > 0) then
-                T%nsec = 1
-                allocate(T%seclist(T%nsec, 2))
-                allocate(T%meannm(T%nsec))
-                T%seclist(1, 1) = secst
-                T%seclist(1, 2) = seced
-                write(T%meannm(1), '(A, I0.3, A, I0.3)') 'd', secst, '-', seced
-            else !
-            ! If fixed number of day is specifed, min(doyslist) and max(doylist) are
-            !   used as lower and upper bounds.
-                T%nsec = (T%doylist(T%ndoy)-T%doylist(1))/nda_sec + 1
-                allocate(T%seclist(T%nsec, 2))
-                allocate(T%meannm(T%nsec))
-                do isec = 1, T%nsec
-                    T%seclist(isec, 1) = (isec - 1) * nda_sec + T%doylist(1)
-                    T%seclist(isec, 2) = min(isec * nda_sec, T%doylist(T%ndoy))
-                    write(T%meannm(isec), '(A, I0.3, A, I0.3)') &
-                          'd', T%seclist(isec, 1), '-', T%seclist(isec, 2)
-                enddo
+            if (all(T%doylist > 0)) then
+                if (meanfreq=="m") then 
+                    T%nsec = size(mnlist)
+                    allocate(T%seclist(T%nsec, 2))
+                    allocate(T%meannm(T%nsec))
+                    do isec = 1, T%nsec
+                        T%seclist(isec, 1) = 1 + sum(eom(1:mnlist(isec)-1))
+                        T%seclist(isec, 2) = sum(eom(1:mnlist(isec)))
+                        write(T%meannm(isec), '(I0.2)') mnlist(isec)
+                    enddo
+                elseif (meanfreq=="a") then 
+                    T%nsec = 1
+                    allocate(T%seclist(T%nsec, 2))
+                    allocate(T%meannm(T%nsec))
+                    T%seclist(1, 1) = 1
+                    T%seclist(1, 2) = 365             
+                    write(T%meannm(1), '(A)') 'ann'                   
+                elseif (seced >= secst /= 0 .and. secst > 0) then
+                    T%nsec = 1
+                    allocate(T%seclist(T%nsec, 2))
+                    allocate(T%meannm(T%nsec))
+                    T%seclist(1, 1) = secst
+                    T%seclist(1, 2) = seced
+                    write(T%meannm(1), '(A, I0.3, A, I0.3)') 'd', secst, '-', seced
+                    write(T%meannm(1), '(A)') 'ann'
+                elseif (count(seclist_in_st/=0) /= 0 .and. all(seclist_in_st >= 0) .and. &
+                        count(seclist_in_ed/=0) /= 0 .and. all(seclist_in_ed >= 0)) then
+                    T%nsec = min(count(seclist_in_st/=0), count(seclist_in_ed/=0))
+                    allocate(T%seclist(T%nsec, 2))
+                    allocate(T%meannm(T%nsec))
+                    do isec = 1, T%nsec
+                        T%seclist(isec, 1) = seclist_in_st(isec)
+                        T%seclist(isec, 2) = seclist_in_ed(isec)
+                        write(T%meannm(isec), '(A, I0.3, A, I0.3)') 'd', T%seclist(isec, 1), '-', T%seclist(isec, 2)
+                    enddo
+                else
+                    T%nsec = (T%doylist(T%ndoy)-T%doylist(1))/nda_sec + 1
+                    allocate(T%seclist(T%nsec, 2))
+                    allocate(T%meannm(T%nsec))
+                    do isec = 1, T%nsec
+                        T%seclist(isec, 1) = (isec - 1) * nda_sec + T%doylist(1)
+                        T%seclist(isec, 2) = min(isec * nda_sec, T%doylist(T%ndoy))
+                        write(T%meannm(isec), '(A, I0.3, A, I0.3)') &
+                                'd', T%seclist(isec, 1), '-', T%seclist(isec, 2)
+                    enddo
+                endif           
+            elseif (all(T%doylist == 0)) then
+                if (meanfreq=="a") then 
+                    T%nsec = 1
+                    allocate(T%seclist(T%nsec, 2))
+                    allocate(T%meannm(T%nsec))
+                    T%seclist(1, 1) = 1
+                    T%seclist(1, 2) = 365             
+                    write(T%meannm(1), '(A)') 'ann' 
+                else
+                    write(*, '(A)') "ERROR: Mean/Eddy frequency conflicts annual input."
+                    STOP                    
+                endif
+            else
+                if (meanfreq=="a") then 
+                    T%nsec = 1
+                    allocate(T%seclist(T%nsec, 2))
+                    allocate(T%meannm(T%nsec))
+                    T%seclist(1, 1) = -1
+                    T%seclist(1, 2) = -12             
+                    write(T%meannm(1), '(A)') 'ann' 
+                elseif (meanfreq=="m") then 
+                    continue
+                else
+                    write(*, '(A)') "ERROR: Mean/Eddy frequency conflicts monthly input."
+                    STOP                    
+                endif
             endif
         endif
 
@@ -779,6 +813,7 @@ module io
                     call nc_read(fn_vor, 'curlhdiff', WORK); curlhdiff     = curlhdiff     + WORK(:, :, :, 1) / nn
                     call nc_read(fn_vor, 'curlvdiff', WORK); curlvdiff     = curlvdiff     + WORK(:, :, :, 1) / nn
                     call nc_read(fn_vor, 'res'      , WORK); res           = res           + WORK(:, :, :, 1) / nn
+                    call nc_read(fn_vor, 'errnlsub' , WORK); err_nlsub     = err_nlsub     + WORK(:, :, :, 1) / nn
                 endif
 
                 ! if (abs(cmode) == 1) then
@@ -815,6 +850,7 @@ module io
             write(*, fmtm_vor) 'curlhdiff: ', curlhdiff(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
             write(*, fmtm_vor) 'curlvdiff: ', curlvdiff(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
             write(*, fmtm_vor) 'res: '      , res      (B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) 'errnlsub: ' , err_nlsub(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         endif
 
         if (index(func, "d") /= 0) then
@@ -853,8 +889,7 @@ module io
             if     (idoy == 0) then
                 write(mmdd, '(A)') ''
             elseif (idoy <  0) then
-                call doy2date(-idoy, mm, dd)
-                write(mmdd, '(A, I0.2)') trim(dlm), mm
+                write(mmdd, '(A, I0.2)') trim(dlm), -idoy
             else
                 call doy2date( idoy, mm, dd)
                 write(mmdd, '(A, I0.2, A, I0.2)') trim(dlm), mm, trim(dlm), dd

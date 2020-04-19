@@ -109,10 +109,10 @@ module zeta
             if (index(func_c, "d#-") /= 0 .or. index(func_c, "d-#") /= 0) then
                 write(*, '(A)') '  Decomposing curl of advection term (w/ nonflux twisting term, w/ subcomponents)'
                 call decomp_curladv(.False., .True.)
-            elseif (index(func_c, "d-") /= 0 .or. index(func_c, "d-#") == 0) then
+            elseif (index(func_c, "d-") /= 0 .and. index(func_c, "d-#") == 0) then
                 write(*, '(A)') '  Decomposing curl of advection term (w/ flux twisting term, w/ subcomponents)'
                 call decomp_curladv(.True., .True.)
-            elseif (index(func_c, "d#") /= 0 .or. index(func_c, "d#-") == 0) then
+            elseif (index(func_c, "d#") /= 0 .and. index(func_c, "d#-") == 0) then
                 write(*, '(A)') '  Decomposing curl of advection term (w/ nonflux twisting term)'
                 call decomp_curladv(.False., .False.)
             else
@@ -400,6 +400,8 @@ module zeta
         curlhdiff(1,:,:) = MVALUE; curlvdiff(1,:,:) = MVALUE; res(1,:,:) = MVALUE;
         curlnonl(:,1,:) = MVALUE; curlcor(:,1,:) = MVALUE; curlpgrad(:,1,:) = MVALUE; 
         curlhdiff(:,1,:) = MVALUE; curlvdiff(:,1,:) = MVALUE; res(:,1,:) = MVALUE;
+        curlpgrad(B%nx,:,:) = MVALUE; curlpgrad(:,B%ny,:) = MVALUE; 
+
 
         write(*, fmtm_vor) 'curlnonl: ' , curlnonl (B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         write(*, fmtm_vor) 'curlcor: '  , curlcor  (B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)

@@ -24,8 +24,10 @@ Program main
         write(*, *)
         write(*, '(A)') '-----------------------------------------------------'
         write(*, '(A)') '  Checking mean files ...'
+        ! Check if using climatology (ifmeanclm = .True.) or annual average
         if (ifmeanclm) then
             slyr = T%nyr
+            ! Deriving "YYYY-YYYY" in the filenames if not provided 
             if (T%menm_clm=="") then
                 write(T%menm_clm, '(I0.4, A, I0.4)') T%yrlist(1), '-', T%yrlist(T%nyr)
             endif
