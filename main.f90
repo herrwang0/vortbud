@@ -7,7 +7,7 @@ Program main
     integer :: iyr, it, ida, isec, slyr, slsec
     character(len = 20) :: yyyymmdd
     character(len=10) :: func, func_m, func_me
-    logical :: meanfilestat
+    logical :: meanfilestat, ifsavesf
 
 !---------------------Initialization--------------------------------------------
     ! print*, 'Loading parameters ...'
@@ -36,9 +36,9 @@ Program main
         endif
         do iyr = 1, T%nyr, slyr
             do isec = 1, T%nsec, 1
+                ! Get filename (fn_vorm%fn) for mean fields 
                 call get_yyyymmdd(T%yrlist(iyr), 0, T%menm_clm, T%meannm(isec), fn_vorm%dlm, yyyymmdd)
-                write(fn_vorm%fn, '(A, A, A, A, A)') &
-                    trim(fn_vorm%dir), trim(fn_vorm%pfx), trim(yyyymmdd), trim(fn_vorm%sfx), '.nc'
+                fn_vorm%fn = trim(fn_vorm%dir) // trim(fn_vorm%pfx) // trim(yyyymmdd) // trim(fn_vorm%sfx) // '.nc'
                 write(*, '(A, A)') '  File ', trim(fn_vorm%fn)
 
                 call check_meanfile(func_m, trim(fn_vorm%fn), meanfilestat)
@@ -50,9 +50,9 @@ Program main
                                         T%yrnm_clm, T%avnm_clm, fn_mom)
                     call init_zetavars_output(func_m)
                     call calc_zeta(func_m)
-                    call output_sf(func_m, fn_vorm%fn)
+                    call output_sf(fn_vorm%fn)
                     call release_zetavars_input(func_m)
-                    call release_zetavars_output(func_m)
+                    call release_zetavars_output()
                 else
                     write(*, '(A)') '   Status OK!'
                 endif
@@ -65,14 +65,27 @@ Program main
     write(*, '(A)') 'Start the main loop'
     do iyr = 1, T%nyr, 1
         do isec = 1, T%nsec, 1
-            if (index(func, "d") /=0) then ! We need to do the decomposition for each input file and save them, then read and average for mean/eddy decomposition.
-                slsec = 1
-            else                           ! Elsewise, we can average first then do the curl on the averaged (over each section) fields
-                slsec = T%seclist(isec, 2) - T%seclist(isec, 1) + 1
-            endif
             if (trim(func) /= "") then
+                ! For climatology input, we average over the section first. Then calculate curl,
+                !  calculate nonlinear term offline as the mean, calculate the difference as eddy
+                !  and output after each section
+                ! For non-clim and decomposing nonlinear, we need to calculate at each timestep,
+                !  and save them for m/e decomposition 
+                ! For non-clim and no decompose and m/e, we can again first average
+                if (trim(T%yrnm_clm) /= "") then
+                    slsec = T%seclist(isec, 2) - T%seclist(isec, 1) + 1
+                    ifsavesf = .True.
+                else
+                    if (trim(func_me) /= "" .and. index(func, "d") == 0) then
+                        slsec = T%seclist(isec, 2) - T%seclist(isec, 1) + 1
+                        ifsavesf = .False.
+                    else
+                        slsec = 1
+                        ifsavesf = .True.
+                    endif
+                endif
                 do it = T%seclist(isec, 1), T%seclist(isec, 2), slsec
-                    ! Initializing input/outut fields used by zeta module'
+                    ! Initializing input/outut fields used by zeta module
                     call init_zetavars_input(func = func)
                     call init_zetavars_output(func = func)
                     ! Loading (and average) variable fields from input files
@@ -81,21 +94,24 @@ Program main
                                          T%yrnm_clm, T%avnm_clm, fn_mom)
                     ! Calculation
                     call calc_zeta(func = func)
-                    call release_zetavars_input(func = func)
+                    call release_zetavars_input(func)
 
-                    if (slsec == 1) then ! Output in two cases: 1) ifdecomp is True. 2) Curl only and each section has just one timestep.
-                        ! Output file name and creatation
+                    ! Output happens in three cases: 
+                    !   1) ifdecomp is True. 
+                    !   2) Curl only and each section has just one timestep.
+                    !   3) Input file is climatology
+                    if (ifsavesf) then 
+                        ! Get output filename
                         call get_yyyymmdd(T%yrlist(iyr), it, &
                                           T%yrnm_clm, T%avnm_clm, fn_vor%dlm, yyyymmdd)
-                        write(fn_vor%fn, '(A, A, A, A, A)') &
-                              trim(fn_vor%dir), trim(fn_vor%pfx), trim(yyyymmdd), trim(fn_vor%sfx), '.nc'
+                        fn_vor%fn = trim(fn_vor%dir) // trim(fn_vor%pfx) // trim(yyyymmdd) // trim(fn_vor%sfx) // '.nc'
                         write(*, *)
                         write(*, '(A)') '  ---------------------------------------------------'
                         write(*, '(A, A)') '  Outputing file(s): ', trim(fn_vor%fn)
-                        ! Output files
-                        call output_sf(func, fn_vor%fn)
+                        ! Output fields
+                        call output_sf(fn_vor%fn)
                         ! Release working variables
-                        call release_zetavars_output(func = func)
+                        call release_zetavars_output()
                         write(*, '(A, A)') "  Finished ", yyyymmdd
                     endif
                  enddo
@@ -109,22 +125,15 @@ Program main
                                         (/ (ida, ida = T%seclist(isec,1), T%seclist(isec,2)) /), &
                                         '', '', fn_vor)
                 endif
-                ! Load mean field variables
+                ! Load mean field and Output mean/eddy file
                 call get_yyyymmdd(T%yrlist(iyr), 0, T%menm_clm, T%meannm(isec), fn_vorm%dlm, yyyymmdd)
-                write(fn_vorm%fn, '(A, A, A, A, A)') &
-                      trim(fn_vorm%dir), trim(fn_vorm%pfx), trim(yyyymmdd), trim(fn_vorm%sfx), '.nc'
+                fn_vorm%fn = trim(fn_vorm%dir) // trim(fn_vorm%pfx) // trim(yyyymmdd) // trim(fn_vorm%sfx) // '.nc'
                 write(*, '(A, A)') '  Using file: ', trim(fn_vorm%fn)
-                call init_zetavars_mean(func_m)
-                call load_mean_sf(func_m, fn_vorm%fn)
-                ! Output mean/eddy file
                 call get_yyyymmdd(T%yrlist(iyr), 0, "", T%meannm(isec), fn_vore%dlm, yyyymmdd)
-                write(fn_vore%fn, '(A, A, A, A, A)') &
-                      trim(fn_vore%dir), trim(fn_vore%pfx), trim(yyyymmdd), trim(fn_vore%sfx), '.nc'
+                fn_vore%fn = trim(fn_vore%dir) // trim(fn_vore%pfx) // trim(yyyymmdd) // trim(fn_vore%sfx) // '.nc'
                 write(*, '(A, A)') '  Outputing file: ', trim(fn_vore%fn)
-                call output_me(func_m, fn_vore%fn)
-                ! Release variables
-                call release_zetavars_mean(func_m)
-                call release_zetavars_output(func = func_me)
+                call output_me(func_m, fn_vorm%fn, fn_vore%fn)
+                call release_zetavars_output()
            endif
        enddo
     enddo

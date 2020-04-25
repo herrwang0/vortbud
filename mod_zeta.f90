@@ -2,10 +2,26 @@ module zeta
     use params, only : kd_r, MVALUE, B, fngrid, fmt_exp, fmt_flt
     implicit none
     private
+    public :: zetavar, vargrp, load_const, calc_zeta, &
+        init_zetavars_input, init_zetavars_output, release_zetavars_input, release_zetavars_output
 
-    ! public :: load_const, zeta_equation, decomp_curladv, init_zetavars, release_zetavars, create_outputfiles
-    ! public :: load_const, calc_zeta, init_zetavars, release_zetavars
-    public :: load_const, calc_zeta, init_zetavars_input, init_zetavars_output, release_zetavars_input, release_zetavars_output
+    ! Output variable type w/ meta for netCDF
+    type zetavar
+        character(len = 10) :: name
+        real(kind=kd_r), dimension(:,:,:), allocatable :: value
+        real(kind=kd_r) :: missing_value
+        character(len = 300) :: long_name
+        character(len = 10)  :: Units = "1/s^2"
+        character(len = 300) :: coordinates = "TLONG TLAT z_t time" 
+        integer :: varid 
+    endtype zetavar
+
+    ! Wrapper for variables groups
+    type vargrp
+        character(len = 10) :: name
+        type(zetavar), dimension(:), pointer :: vlist
+        logical :: key = .False.
+    endtype vargrp
 
     ! Input variables
     real(kind=kd_r), dimension(:, :, :), allocatable, public :: uc, vc, wc
@@ -15,14 +31,21 @@ module zeta
         ueu, uev, vnu, vnv, wtu, wtv
 
     ! Output variables
-    real(kind=kd_r), dimension(:, :, :), allocatable, public :: &
+    ! Variables are gathered in groups corresponding to each individual calc mode
+    ! vgrp is a wrapper over the groups, which includes the group's name and if it is activated 
+    type(zetavar), dimension(:), target :: &
+        vl_c(8), vl_a(1), vl_aD(3), vl_m(1), vl_d(7), vl_dD(18), vl_e(1), vl_f(1)
+    ! Hash table: 1 = c, 2 = a, 3 = a-, 4 = m, 5 = d, 6 = d-, 7 = e, 8 = f
+    type(vargrp), dimension(8), target, public :: vgrp
+
+    real(kind=kd_r), dimension(:, :, :), pointer :: &
         curlnonl, betav, stretchp, err_cor, curlpgrad, curlhdiff, curlvdiff, res
-    real(kind=kd_r), dimension(:, :, :), allocatable, public :: &
-        curladv, curlmet, err_nlsub, advu, advv, advw, advVx, advVy, advVz, err_nldecomp, curladvf
-    real(kind=kd_r), dimension(:, :, :), allocatable, public :: curladvu, curladvv, curladvw
-    real(kind=kd_r), dimension(:, :, :), allocatable, public :: &
-        advu_x, advv_x, advw_x, advVx_x, advVy_x, advVz_x, errnl_ux, errnl_vx, errnl_wx, &
-        advu_y, advv_y, advw_y, advVx_y, advVy_y, advVz_y, errnl_uy, errnl_vy, errnl_wy
+    real(kind=kd_r), dimension(:, :, :), pointer :: &
+        curladv, curlmet, err_nlsub, advu, advv, advw, twix, twiy, twiz, err_adv, curladvf
+    real(kind=kd_r), dimension(:, :, :), pointer :: curladvu, curladvv, curladvw
+    real(kind=kd_r), dimension(:, :, :), pointer :: &
+        advu_x, advv_x, advw_x, twix_x, twiy_x, twiz_x, erax_x, eray_x, eraz_x, &
+        advu_y, advv_y, advw_y, twix_y, twiy_y, twiz_y, erax_y, eray_y, eraz_y
 
     ! Constants and grid info
     real(kind=kd_r), allocatable, public :: tlat(:,:), tlong(:,:), z_t(:)
@@ -31,15 +54,8 @@ module zeta
     real(kind=kd_r), dimension(:, :, :), allocatable :: dzu, dzt
     real(kind=kd_r), dimension(:, :)   , allocatable :: fcor, fcort
     real(kind=kd_r) :: grav
-    ! real(kind=kd_r), dimension(:, :)   , allocatable :: dxue, dyue, tareae, &
-    !                                                     dxun, dyun, tarean
     logical, dimension(:, :, :), allocatable :: umask, tmask
-
     real(kind=kd_r), dimension(:,:,:), allocatable :: ue, vn, wt, ume, vme, umn, vmn, umt, vmt
-    ! real(kind=kd_r), dimension(:,:,:), allocatable, public :: rrxx, rrxy, rryx, rryy, rrzx, rrzy
-    ! real(kind=kd_r), dimension(:,:,:), allocatable, public :: rcuv, rcuu, rcvv, rcvu, rcwv, rcwu
-    ! real(kind=kd_r), dimension(:,:,:), allocatable, public :: rsx1, rsx2, rsy1, rsy2, rsz1, rsz2
-    ! real(kind=kd_r), dimension(:,:,:), allocatable, public :: vDdivDx, uDdivDy
 
     ! print format
     character(len = 100) :: fmts_vel, fmtm_vel, fmts_vor, fmtm_vor
@@ -47,24 +63,25 @@ module zeta
     contains
     !!--------------------------------------------------------------------------
     ! * Input functions
-    ! null (empty): do nothing.
-    ! curl ("c"): curl of zeta equations terms, including two (+1) tersm from Coriolis
-    !                (nonlinear, curl of pgrad, hdiff, vdiff, residual,
-    !                 betav from Coriolis, stretching from Coriolis, error with Coriolis decomposition)
+    ! curl ("c"): curl of zeta equations terms, including three terms from Coriolis
+    !   (nonlinear, curl of pgrad, hdiff, vdiff, residual, betav from Coriolis,
+    !    stretching from Coriolis, error with Coriolis decomposition)
     ! offline adv ("a"): offline calculation of nonlinear advection term (curladv)
-    !   ("a-"): Debug mode, outputting curladvu, curladvv, curladvw instead of curladv
+    !   ("a-"): Debug mode, outputting additionally curladvu, curladvv, curladvw
     ! offline met ("m"): offline calculation of nonlinear metric term (curlmet)
     ! decomp adv ("d"): decomposition of nonlinear advection term.
     !   ("d"): flux form twisting term (default)
     !   ("d#"): traditional twisting term
-    ! online adv from flux ("f"): "online" calculation of nonlinear advection term through momentum fluxes
-    ! + err_nlsub ("e"): difference between curlnonl online and offline (should not be used as a standalone function)
+    !   ("d-"/"d#-"): Debug mode, outputting the original x and y components of each term
+    ! online adv from flux ("f"): "online" calculation of the advection term from momentum fluxes
+    ! + err_nlsub ("e"): difference between curlnonl online and offline 
+    !   (should not be used as a standalone function)
     !!--------------------------------------------------------------------------
 
     subroutine calc_zeta(func)
         implicit none
-        character(len=*), intent(in), optional :: func
-        character(len=10) :: func_c
+        character(len=*), intent(in) :: func
+        integer :: ig
 
         write(fmts_vor, '(A, A, A)' ) '(A20, ', trim(fmt_exp), ')'
         write(fmtm_vor, '(A, I2, A, A)') '(A20, ', B%zi_dped - B%zi_dpst + 1, trim(fmt_exp), ')'
@@ -74,28 +91,52 @@ module zeta
         write(*, *)
         write(*, '(A)') '-----------------------------------------------------'
         write(*, '(A)'), 'Start calculating voriticity equation'
+        write(*, '(2A)') "  Function code: ", trim(func)
 
-        if (present(func) .and. trim(func) /= "") then
-            func_c = func
-        else
-            call warning_msg("noinput")
-            return
-        endif
-        write(*, '(2A)') "  Function code: ", trim(func_c)
-
-        if (index(func_c, "c") /= 0) then
+        res       => vl_c(1)%value
+        curlnonl  => vl_c(2)%value
+        curlpgrad => vl_c(3)%value
+        curlhdiff => vl_c(4)%value
+        curlvdiff => vl_c(5)%value
+        betav     => vl_c(6)%value
+        stretchp  => vl_c(7)%value
+        err_cor   => vl_c(8)%value
+    
+        curladv   => vl_a(1)%value
+        curladvu  => vl_aD(1)%value; curladvv  => vl_aD(2)%value; curladvw  => vl_aD(3)%value
+    
+        curlmet   => vl_m(1)%value
+    
+        advu      => vl_d(1)%value;  advv      => vl_d(2)%value;  advw      => vl_d(3)%value
+        twix      => vl_d(4)%value;  twiy      => vl_d(5)%value;  twiz      => vl_d(6)%value
+        err_adv   => vl_d(7)%value
+    
+        advu_x    => vl_dD( 1)%value; advu_y    => vl_dD( 2)%value
+        advv_x    => vl_dD( 3)%value; advv_y    => vl_dD( 4)%value
+        advw_x    => vl_dD( 5)%value; advw_y    => vl_dD( 6)%value
+        twix_x    => vl_dD( 7)%value; twix_y    => vl_dD( 8)%value
+        twiy_x    => vl_dD( 9)%value; twiy_y    => vl_dD(10)%value
+        twiz_x    => vl_dD(11)%value; twiz_y    => vl_dD(12)%value
+        erax_x    => vl_dD(13)%value; erax_y    => vl_dD(14)%value
+        eray_x    => vl_dD(15)%value; eray_y    => vl_dD(16)%value
+        eraz_x    => vl_dD(17)%value; eraz_y    => vl_dD(18)%value
+    
+        err_nlsub => vl_e(1)%value
+        curladvf  => vl_f(1)%value
+    
+        if (index(func, "c") /= 0) then
             write(*, *)
             write(*, '(A)') '  ---------------------------------------------------'
             write(*, '(A)') '  Start calculating zcurl of momentum equations'
             call zeta_equation()
         endif
-        if (index(func_c, "m") /= 0) then
+        if (index(func, "m") /= 0) then
             call calc_curlmet()
         endif
-        if (index(func_c, "a") /= 0) then
+        if (index(func, "a") /= 0) then
             write(*, *)
             write(*, '(A)') '  ---------------------------------------------------'
-            if (index(func_c, "a-") /= 0) then
+            if (index(func, "a-") /= 0) then
                 write(*, '(A)') '  Calculating curl of advection term (offline, w/ u,v,w commponents)'
                 call calc_curladv(.True.)
             else
@@ -103,16 +144,16 @@ module zeta
                 call calc_curladv(.False.)
             endif
         endif
-        if (index(func_c, "d") /= 0) then
+        if (index(func, "d") /= 0) then
             write(*, *)
             write(*, '(A)') '  ---------------------------------------------------'
-            if (index(func_c, "d#-") /= 0 .or. index(func_c, "d-#") /= 0) then
+            if (index(func, "d#-") /= 0 .or. index(func, "d-#") /= 0) then
                 write(*, '(A)') '  Decomposing curl of advection term (w/ nonflux twisting term, w/ subcomponents)'
                 call decomp_curladv(.False., .True.)
-            elseif (index(func_c, "d-") /= 0 .and. index(func_c, "d-#") == 0) then
+            elseif (index(func, "d-") /= 0 .and. index(func, "d-#") == 0) then
                 write(*, '(A)') '  Decomposing curl of advection term (w/ flux twisting term, w/ subcomponents)'
                 call decomp_curladv(.True., .True.)
-            elseif (index(func_c, "d#") /= 0 .and. index(func_c, "d#-") == 0) then
+            elseif (index(func, "d#") /= 0 .and. index(func, "d#-") == 0) then
                 write(*, '(A)') '  Decomposing curl of advection term (w/ nonflux twisting term)'
                 call decomp_curladv(.False., .False.)
             else
@@ -120,25 +161,31 @@ module zeta
                 call decomp_curladv(.True., .False.)
             endif
         endif
-        if (index(func_c, "e") /= 0) then
+        if (index(func, "e") /= 0) then
             write(*, *)
             write(*, '(A)') '  ---------------------------------------------------'
             write(*, '(A)') '  Calculating error term from offline calculation of nonlinear terms'
             call calc_errnlsub()
         endif
-        if (index(func_c, "f") /= 0) then
+        if (index(func, "f") /= 0) then
             write(*, *)
             write(*, '(A)') '  ---------------------------------------------------'
             write(*, '(A)') '  Calculating curl of advection terms from momentum fluxes'
             call calc_curladv_flx()
         endif
 
-        if (index(func_c, "a") /= 0 .or. index(func_c, "d") /= 0) then
+        if (index(func, "a") /= 0 .or. index(func, "d") /= 0) then
             write(*, *)
             write(*, '(A)') '  ---------------------------------------------------'
             write(*, '(A)') '  Verifying offline calculations'
             call verify_nonl()
         endif
+
+        nullify(curlnonl, betav, stretchp, err_cor, curlpgrad, curlhdiff, curlvdiff, res, &
+                curladv, curlmet, err_nlsub, advu, advv, advw, twix, twiy, twiz, err_adv, curladvf, &
+                curladvu, curladvv, curladvw, &
+                advu_x, advv_x, advw_x, twix_x, twiy_x, twiz_x, erax_x, eray_x, eraz_x, &
+                advu_y, advv_y, advw_y, twix_y, twiy_y, twiz_y, erax_y, eray_y, eraz_y)
     endsubroutine
 
     subroutine load_const()
@@ -460,10 +507,10 @@ module zeta
     endsubroutine
 
     subroutine calc_errnlsub()
-        if (allocated(curladv)) then
+        if ( vgrp(2)%key ) then
             err_nlsub = curlnonl - curladv - curlmet
-        elseif (allocated(advu)) then
-            err_nlsub = curlnonl - advu - advv - advw - advVx - advVy - advVz - err_nldecomp - curlmet
+        elseif ( vgrp(5)%key ) then
+            err_nlsub = curlnonl - advu - advv - advw - twix - twiy - twiz - err_adv - curlmet
         endif
     endsubroutine
 
@@ -663,15 +710,15 @@ module zeta
 
             if (twif) then
                 WORK = mean_ys(u20du1(:,:,2) - u20du1(:,:,1)) / tarea / dzt(:,:,iz)
-                advVx(:, :, iz) = advVx(:, :, iz) + WORK
-                if (debug) advVx_x(:, :, iz) = WORK
+                twix(:, :, iz) = twix(:, :, iz) + WORK
+                if (debug) twix_x(:, :, iz) = WORK
             else
                 WORK = mean_ys(mean_xw(dd_xw(ue(:,:,iz), ONES)) * mean_xw(dd_xw(vme(:,:,iz), dxu))) / tarea / dzt(:,:,iz)
-                advVx(:, :, iz) = advVx(:, :, iz) + WORK
-                if (debug) advVx_x(:, :, iz) = WORK
+                twix(:, :, iz) = twix(:, :, iz) + WORK
+                if (debug) twix_x(:, :, iz) = WORK
                 WORK = mean_ys(mean_xw(mean_xw(vme(:,:,iz))/dxu) * dd_xw(dd_xw(ue(:,:,iz), ONES), ONES)) / tarea / dzt(:,:,iz)
-                err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) + WORK
-                if (debug) errnl_ux(:, :, iz) = WORK                  
+                err_adv(:,:,iz) = err_adv(:,:,iz) + WORK
+                if (debug) erax_x(:, :, iz) = WORK                  
             endif
 
             ! d [d(uu)/dy] / dx = d (udu/dy) / dx + d (udu/dy) / dx
@@ -693,15 +740,15 @@ module zeta
 
             if (twif) then
                 WORK = mean_xw(u20du1(:,:,2) - u20du1(:,:,1)) / tarea / dzt(:,:,iz)
-                advVx(:, :, iz) = advVx(:, :, iz) - WORK
-                if (debug) advVx_y(:, :, iz) = -WORK
+                twix(:, :, iz) = twix(:, :, iz) - WORK
+                if (debug) twix_y(:, :, iz) = -WORK
             else
                 WORK = mean_xw(mean_xw(dd_ys(ue(:,:,iz), ONES)) * mean_ys(dd_xw(ume(:,:,iz), dyu))) / tarea / dzt(:,:,iz)
-                advVx(:, :, iz) = advVx(:, :, iz) - WORK
-                if (debug) advVx_y(:, :, iz) = -WORK
+                twix(:, :, iz) = twix(:, :, iz) - WORK
+                if (debug) twix_y(:, :, iz) = -WORK
                 WORK = mean_xw(mean_ys(mean_xw(ume(:,:,iz))/dyu) * dd_xw(dd_ys(ue(:,:,iz), ONES), ONES)) / tarea / dzt(:,:,iz)
-                err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) - WORK
-                if (debug) errnl_uy(:, :, iz) = -WORK
+                err_adv(:,:,iz) = err_adv(:,:,iz) - WORK
+                if (debug) erax_y(:, :, iz) = -WORK
             endif
 
           ! advv
@@ -724,15 +771,15 @@ module zeta
 
             if (twif) then
                 WORK = mean_ys(u20du1(:,:,2) - u20du1(:,:,1)) / tarea / dzt(:,:,iz)
-                advVy(:, :, iz) = advVy(:, :, iz) + WORK
-                if (debug) advVy_x(:, :, iz) = WORK
+                twiy(:, :, iz) = twiy(:, :, iz) + WORK
+                if (debug) twiy_x(:, :, iz) = WORK
             else
                 WORK = mean_ys(mean_ys(dd_xw(vn(:,:,iz), ONES)) * mean_xw(dd_ys(vmn(:,:,iz), dxu))) / tarea / dzt(:,:,iz)
-                advVy(:, :, iz) = advVy(:, :, iz) + WORK
-                if (debug) advVy_x(:, :, iz) = WORK
+                twiy(:, :, iz) = twiy(:, :, iz) + WORK
+                if (debug) twiy_x(:, :, iz) = WORK
                 WORK = mean_ys(mean_xw(mean_ys(vmn(:,:,iz))/dxu) * dd_ys(dd_xw(vn(:,:,iz), ONES), ONES)) / tarea / dzt(:,:,iz)
-                err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) + WORK
-                if (debug) errnl_vx(:, :, iz) = WORK
+                err_adv(:,:,iz) = err_adv(:,:,iz) + WORK
+                if (debug) eray_x(:, :, iz) = WORK
             endif
 
             ! d [d(vu)/dy] / dy = d (vdu/dy) / dy + d (udv/dy) / dy
@@ -754,15 +801,15 @@ module zeta
 
             if (twif) then
                 WORK = mean_xw(u20du1(:,:,2) - u20du1(:,:,1)) / tarea / dzt(:,:,iz)
-                advVy(:, :, iz) = advVy(:, :, iz) - WORK
-                if (debug) advVy_y(:, :, iz) = -WORK
+                twiy(:, :, iz) = twiy(:, :, iz) - WORK
+                if (debug) twiy_y(:, :, iz) = -WORK
             else
                 WORK = mean_xw(mean_ys(dd_ys(vn(:,:,iz), ONES)) * mean_ys(dd_ys(umn(:,:,iz), dyu))) / tarea / dzt(:,:,iz)
-                advVy(:, :, iz) = advVy(:, :, iz) - WORK
-                if (debug) advVy_y(:, :, iz) = -WORK
+                twiy(:, :, iz) = twiy(:, :, iz) - WORK
+                if (debug) twiy_y(:, :, iz) = -WORK
                 WORK = mean_xw(mean_ys(mean_ys(umn(:,:,iz))/dyu) * dd_ys(dd_ys(vn(:,:,iz), ONES), ONES)) / tarea / dzt(:,:,iz)
-                err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) - WORK
-                if (debug) errnl_vy(:, :, iz) = -WORK
+                err_adv(:,:,iz) = err_adv(:,:,iz) - WORK
+                if (debug) eray_y(:, :, iz) = -WORK
             endif
 
           ! advw  
@@ -802,49 +849,49 @@ module zeta
 
             if (twif) then
                 WORK = mean_ys(u20du1_zx(:,:,2) - u20du1_zx(:,:,1)) / tarea / dzt(:, :, iz)
-                advVz(:, :, iz) = advVz(:, :, iz) + WORK
-                if (debug) advVz_x(:, :, iz) = WORK
+                twiz(:, :, iz) = twiz(:, :, iz) + WORK
+                if (debug) twiz_x(:, :, iz) = WORK
 
                 WORK = mean_xw(u20du1_zy(:,:,2) - u20du1_zy(:,:,1)) / tarea / dzt(:, :, iz)
-                advVz(:, :, iz) = advVz(:, :, iz) - WORK
-                if (debug) advVz_y(:, :, iz) = -WORK
+                twiz(:, :, iz) = twiz(:, :, iz) - WORK
+                if (debug) twiz_y(:, :, iz) = -WORK
             else
                 if (iz == B%nz) then
                     WORK = mean_ys(mean_xw((vmt(:,:,iz) - 0.) * dyu) * dd_xw((wt(:,:,iz) + 0.)/2, ONES)) / tarea / dzt(:,:,iz) 
-                    advVz(:, :, iz) = advVz(:, :, iz) + WORK
-                    if (debug) advVz_x(:, :, iz) = WORK
+                    twiz(:, :, iz) = twiz(:, :, iz) + WORK
+                    if (debug) twiz_x(:, :, iz) = WORK
 
                     WORK = mean_xw(mean_ys((umt(:,:,iz) - 0.) * dxu) * dd_ys((wt(:,:,iz) + 0.)/2, ONES)) / tarea / dzt(:,:,iz) 
-                    advVz(:, :, iz) = advVz(:, :, iz) - WORK
-                    if (debug) advVz_y(:, :, iz) = -WORK
+                    twiz(:, :, iz) = twiz(:, :, iz) - WORK
+                    if (debug) twiz_y(:, :, iz) = -WORK
 
                     WORK = mean_ys(dd_xw(wt(:,:,iz) - 0., ONES) * mean_xw((vmt(:,:,iz) + 0.)/2 * dyu)) / tarea / dzt(:,:,iz)
-                    err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) + WORK
-                    if (debug) errnl_wx(:, :, iz) = WORK
+                    err_adv(:,:,iz) = err_adv(:,:,iz) + WORK
+                    if (debug) eraz_x(:, :, iz) = WORK
 
                     WORK = mean_xw(dd_ys(wt(:,:,iz) - 0., ONES) * mean_ys((umt(:,:,iz) + 0.)/2 * dxu)) / tarea / dzt(:,:,iz)
-                    err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) - WORK
-                    if (debug) errnl_wy(:, :, iz) = -WORK
+                    err_adv(:,:,iz) = err_adv(:,:,iz) - WORK
+                    if (debug) eraz_y(:, :, iz) = -WORK
                else
                     WORK = mean_ys(mean_xw((vmt(:,:,iz) - vmt(:,:,iz+1)) * dyu) * dd_xw((wt(:,:,iz) + wt(:,:,iz+1))/2, ONES)) & 
                            / tarea / dzt(:,:,iz) 
-                    advVz(:, :, iz) = advVz(:, :, iz) + WORK
-                    if (debug) advVz_x(:, :, iz) = WORK
+                    twiz(:, :, iz) = twiz(:, :, iz) + WORK
+                    if (debug) twiz_x(:, :, iz) = WORK
 
                     WORK = mean_xw(mean_ys((umt(:,:,iz) - umt(:,:,iz+1)) * dxu) * dd_ys((wt(:,:,iz) + wt(:,:,iz+1))/2, ONES)) & 
                            / tarea / dzt(:,:,iz) 
-                    advVz(:, :, iz) = advVz(:, :, iz) - WORK
-                    if (debug) advVz_y(:, :, iz) = -WORK
+                    twiz(:, :, iz) = twiz(:, :, iz) - WORK
+                    if (debug) twiz_y(:, :, iz) = -WORK
 
                     WORK = mean_ys(dd_xw(wt(:,:,iz) - wt(:,:,iz+1), ONES) * mean_xw((vmt(:,:,iz) + vmt(:,:,iz+1))/2 * dyu)) &
                            / tarea / dzt(:,:,iz)
-                    err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) + WORK
-                    if (debug) errnl_wx(:, :, iz) = WORK
+                    err_adv(:,:,iz) = err_adv(:,:,iz) + WORK
+                    if (debug) eraz_x(:, :, iz) = WORK
 
                     WORK = mean_xw(dd_ys(wt(:,:,iz) - wt(:,:,iz+1), ONES) * mean_ys((umt(:,:,iz) + umt(:,:,iz+1))/2 * dxu)) &
                            / tarea / dzt(:,:,iz)
-                    err_nldecomp(:,:,iz) = err_nldecomp(:,:,iz) - WORK
-                    if (debug) errnl_wy(:, :, iz) = -WORK
+                    err_adv(:,:,iz) = err_adv(:,:,iz) - WORK
+                    if (debug) eraz_y(:, :, iz) = -WORK
                 endif
             endif
 
@@ -877,9 +924,9 @@ module zeta
                 F_wvdxdz = (F_wdzx(:,:,2) - F_wdzx(:,:,1)) / tarea / dzt(:, :, iz)
                 F_wudydz = (F_wdzy(:,:,2) - F_wdzy(:,:,1)) / tarea / dzt(:, :, iz)
 
-                advVx(:, :, iz) = advVx(:, :, iz) + F_wvdxdz + F_vvdxdy - F_wwdxdy + F_uudxdy
-                advVy(:, :, iz) = advVy(:, :, iz) - F_wudydz - F_vvdxdy + F_wwdxdy - F_uudxdy
-                advVz(:, :, iz) = advVz(:, :, iz) + F_wudydz - F_wvdxdz
+                twix(:, :, iz) = twix(:, :, iz) + F_wvdxdz + F_vvdxdy - F_wwdxdy + F_uudxdy
+                twiy(:, :, iz) = twiy(:, :, iz) - F_wudydz - F_vvdxdy + F_wwdxdy - F_uudxdy
+                twiz(:, :, iz) = twiz(:, :, iz) + F_wudydz - F_wvdxdz
 
                 ! stepping down in z direction
                 F_wdzx(:,:,2) = F_wdzx(:,:,1)
@@ -889,25 +936,25 @@ module zeta
 
         ! RHS
         advu = -advu; advv = -advv; advw = -advw;
-        advVx = -advVx; advVy = -advVy; advVz = -advVz
+        twix = -twix; twiy = -twiy; twiz = -twiz
 
         where(tmask)
             advu  = MVALUE; advv  = MVALUE; advw  = MVALUE
-            advVx = MVALUE; advVy = MVALUE; advVz = MVALUE
+            twix = MVALUE; twiy = MVALUE; twiz = MVALUE
         endwhere
         advu (1:2, :, :) = MVALUE; advv (1:2, :, :) = MVALUE; advw (1:2, :, :) = MVALUE
-        advVx(1:2, :, :) = MVALUE; advVy(1:2, :, :) = MVALUE; advVz(1:2, :, :) = MVALUE
+        twix(1:2, :, :) = MVALUE; twiy(1:2, :, :) = MVALUE; twiz(1:2, :, :) = MVALUE
         advu (:, 1:2, :) = MVALUE; advv (:, 1:2, :) = MVALUE; advw (:, 1:2, :) = MVALUE
-        advVx(:, 1:2, :) = MVALUE; advVy(:, 1:2, :) = MVALUE; advVz(:, 1:2, :) = MVALUE
+        twix(:, 1:2, :) = MVALUE; twiy(:, 1:2, :) = MVALUE; twiz(:, 1:2, :) = MVALUE
         advu (B%nx, :, :) = MVALUE; advv (B%nx, :, :) = MVALUE; advw (B%nx, :, :) = MVALUE
-        advVx(B%nx, :, :) = MVALUE; advVy(B%nx, :, :) = MVALUE; advVz(B%nx, :, :) = MVALUE
+        twix(B%nx, :, :) = MVALUE; twiy(B%nx, :, :) = MVALUE; twiz(B%nx, :, :) = MVALUE
         advu (:, B%ny, :) = MVALUE; advv (:, B%ny, :) = MVALUE; advw (:, B%ny, :) = MVALUE
-        advVx(:, B%ny, :) = MVALUE; advVy(:, B%ny, :) = MVALUE; advVz(:, B%ny, :) = MVALUE
+        twix(:, B%ny, :) = MVALUE; twiy(:, B%ny, :) = MVALUE; twiz(:, B%ny, :) = MVALUE
 
         if (twif) then
-            where(tmask) err_nldecomp = MVALUE
-            err_nldecomp(1:2, :, :) = MVALUE; err_nldecomp(B%nx, :, :) = MVALUE
-            err_nldecomp(:, 1:2, :) = MVALUE; err_nldecomp(:, B%nx, :) = MVALUE
+            where(tmask) err_adv = MVALUE
+            err_adv(1:2, :, :) = MVALUE; err_adv(B%nx, :, :) = MVALUE
+            err_adv(:, 1:2, :) = MVALUE; err_adv(:, B%nx, :) = MVALUE
         endif 
 
         write(*, fmtm_vor) 'advu: ', advu(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
@@ -926,40 +973,27 @@ module zeta
             write(*, fmtm_vor) '  advw_y: ', advw_y(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         endif
 
-        write(*, fmtm_vor) 'advVx: ', advVx(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        write(*, fmtm_vor) 'twix: ', twix(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         if (debug) then
-            write(*, fmtm_vor) '  advVx_x : ', advVx_x(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-            write(*, fmtm_vor) '  errnl_ux: ', errnl_ux(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-            write(*, fmtm_vor) '  advVx_y : ', advVx_y(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-            write(*, fmtm_vor) '  errnl_uy: ', errnl_uy(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  twix_x: ', twix_x(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  erax_x: ', erax_x(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  twix_y: ', twix_y(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  erax_y: ', erax_y(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         endif
-        write(*, fmtm_vor) 'advVy: ', advVy(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        write(*, fmtm_vor) 'twiy: ', twiy(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         if (debug) then
-            write(*, fmtm_vor) '  advVy_x : ', advVy_x(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-            write(*, fmtm_vor) '  errnl_vx: ', errnl_vx(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-            write(*, fmtm_vor) '  advVy_y : ', advVy_y(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-            write(*, fmtm_vor) '  errnl_vy: ', errnl_vy(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  twiy_x: ', twiy_x(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  eray_x: ', eray_x(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  twiy_y: ', twiy_y(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  eray_y: ', eray_y(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         endif
-        write(*, fmtm_vor) 'advVz: ', advVz(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+        write(*, fmtm_vor) 'twiz: ', twiz(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         if (debug) then
-            write(*, fmtm_vor) '  advVz_x : ', advVz_x(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-            write(*, fmtm_vor) '  errnl_wx: ', errnl_wx(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-            write(*, fmtm_vor) '  advVz_y : ', advVz_y(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-            write(*, fmtm_vor) '  errnl_wy: ', errnl_wy(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  twiz_x: ', twiz_x(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  eraz_x: ', eraz_x(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  twiz_y: ', twiz_y(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
+            write(*, fmtm_vor) '  eraz_y: ', eraz_y(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
         endif
-
-        ! write(*, fmtm_vor) 'advX: ', advu(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped) + advVx(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-        ! write(*, fmtm_vor) 'advY: ', advv(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped) + advVy(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-
-        ! write(*, fmtm_vor) 'vDdivDx', vDdivDx(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-        ! write(*, fmtm_vor) 'uDdivDy', uDdivDy(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-        ! write(*, fmtm_vor) 'rsx1', rsx1(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-        ! write(*, fmtm_vor) 'rsx2', rsx2(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-        ! write(*, fmtm_vor) 'rsy1', rsy1(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-        ! write(*, fmtm_vor) 'rsy2', rsy2(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-        ! write(*, fmtm_vor) 'rsz1', rsz1(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-        ! write(*, fmtm_vor) 'rsz2', rsz2(B%xi_dp, B%yi_dp, B%zi_dpst:B%zi_dped)
-
         deallocate(ue, vn, wt, ume, vme, umn, vmn, umt, vmt)
     endsubroutine
 
@@ -970,56 +1004,49 @@ module zeta
 
         do iz = B%zi_dpst, B%zi_dped
             write(*, *)
-            if (allocated(advu)) then
+            if ( vgrp(5)%key ) then
                 total = advu(B%xi_dp, B%yi_dp, iz) + advv(B%xi_dp, B%yi_dp, iz) + advw(B%xi_dp, B%yi_dp, iz) + &
-                        advVx(B%xi_dp, B%yi_dp, iz) + advVy(B%xi_dp, B%yi_dp, iz) + advVz(B%xi_dp, B%yi_dp, iz)
+                        twix(B%xi_dp, B%yi_dp, iz) + twiy(B%xi_dp, B%yi_dp, iz) + twiz(B%xi_dp, B%yi_dp, iz)
                 write(*, '(A, I02)') '      iz = ',  iz
                 write(*, fmts_vor) 'All components: ',  total
-                write(*, fmts_vor) 'All errors: ', err_nldecomp(B%xi_dp, B%yi_dp, iz)
-                if (allocated(curladv)) then
-                    write(*, fmts_vor) 'Diff: ', curladv(B%xi_dp, B%yi_dp, iz) - total - err_nldecomp(B%xi_dp, B%yi_dp, iz)
+                write(*, fmts_vor) 'All errors: ', err_adv(B%xi_dp, B%yi_dp, iz)
+                if ( vgrp(1)%key ) then
+                    write(*, fmts_vor) 'Diff: ', curladv(B%xi_dp, B%yi_dp, iz) - total - err_adv(B%xi_dp, B%yi_dp, iz)
                 endif
             endif
 
-            if (allocated(curladv)) then
+            if ( vgrp(1)%key ) then
                 write(*, fmts_vor) 'Curladv: ', curladv(B%xi_dp, B%yi_dp, iz)
             endif
 
-            if (allocated(curlmet)) then
+            if ( vgrp(4)%key ) then
                 write(*, fmts_vor) 'Curlmet: ', curlmet(B%xi_dp, B%yi_dp, iz)
             endif
 
-            if (allocated(err_nlsub)) then
+            if ( vgrp(7)%key ) then
                 write(*, fmts_vor) 'err_nlsub: ', err_nlsub(B%xi_dp, B%yi_dp, iz)
             endif
 
-            if (allocated(curladvf)) then
+            if ( vgrp(8)%key ) then
                 write(*, fmts_vor) 'Curladv (f): ', curladvf(B%xi_dp, B%yi_dp, iz)
             endif
         enddo
     endsubroutine
-
+    
     subroutine init_zetavars_input(func)
         implicit none
-        character(len=*), intent(in), optional :: func
-        character(len=10) :: func_c
+        character(len=*), intent(in) :: func
 
         write(*, *)
         write(*, '(A)') '-----------------------------------------------------'
         write(*, '(A)') 'Initializing input variables'
-        if (present(func) .and. trim(func) /= "") then
-            func_c = func
-        else
-            call warning_msg("noinput")
-            return
-        endif
 
-        if (index(func_c, "a") /= 0 .or. index(func_c, "m") /= 0 .or. &
-            index(func_c, "d") /= 0 .or. index(func_c, "c") /= 0) then
+        if (index(func, "a") /= 0 .or. index(func, "m") /= 0 .or. &
+            index(func, "d") /= 0 .or. index(func, "c") /= 0) then
             allocate(uc(B%nx, B%ny, B%nz), vc(B%nx, B%ny, B%nz))
             uc = 0.; vc = 0.
         endif
-        if (index(func_c, "c") /= 0) then
+        if (index(func, "c") /= 0) then
             allocate(advx  (B%nx, B%ny, B%nz), advy  (B%nx, B%ny, B%nz), &
                      gradx (B%nx, B%ny, B%nz), grady (B%nx, B%ny, B%nz), &
                      hdiffx(B%nx, B%ny, B%nz), hdiffy(B%nx, B%ny, B%nz), &
@@ -1029,11 +1056,11 @@ module zeta
             hdiffx = 0.; hdiffy = 0.; vdiffx = 0.; vdiffy = 0.
             ssh = 0.
         endif
-        if (index(func_c, "a") /= 0 .or. index(func_c, "d") /= 0) then
+        if (index(func, "a") /= 0 .or. index(func, "d") /= 0) then
             allocate(wc(B%nx, B%ny, B%nz))
             wc = 0.
         endif
-        if (index(func_c, "f") /= 0) then
+        if (index(func, "f") /= 0) then
             allocate(ueu(B%nx, B%ny, B%nz), uev(B%nx, B%ny, B%nz), &
                      vnu(B%nx, B%ny, B%nz), vnv(B%nx, B%ny, B%nz), &
                      wtu(B%nx, B%ny, B%nz), wtv(B%nx, B%ny, B%nz))
@@ -1043,145 +1070,105 @@ module zeta
 
     subroutine init_zetavars_output(func)
         implicit none
-        character(len=*), intent(in), optional :: func
-        character(len=10) :: func_c
-
+        character(len=*), intent(in) :: func
+        integer :: ig, iv 
+    
         write(*, *)
         write(*, '(A)') '-----------------------------------------------------'
         write(*, '(A)') 'Initializing output variables'
-        if (present(func) .and. trim(func) /= "") then
-            func_c = func
-        else
-            call warning_msg("noinput")
-            return
-        endif
-
-        if (index(func_c, "c") /= 0) then
-            allocate(curlnonl (B%nx, B%ny, B%nz), curlpgrad(B%nx, B%ny, B%nz), res(B%nx, B%ny, B%nz), &
-                     curlhdiff(B%nx, B%ny, B%nz), curlvdiff(B%nx, B%ny, B%nz), &
-                     betav(B%nx, B%ny, B%nz), stretchp(B%nx, B%ny, B%nz), err_cor(B%nx, B%ny, B%nz))
-            curlnonl = 0.; curlpgrad = 0.; curlhdiff = 0.; curlvdiff = 0.; res = 0.
-            betav    = 0.; stretchp  = 0.; err_cor  = 0.
-        endif
-        if (index(func_c, "e") /= 0) then
-            allocate(err_nlsub(B%nx, B%ny, B%nz))
-            err_nlsub = 0.
-        endif
-        if (index(func_c, "m") /= 0) then
-            allocate(curlmet(B%nx, B%ny, B%nz))
-            curlmet = 0.
-        endif
-        if (index(func_c, "a") /= 0) then
-            allocate(curladv(B%nx, B%ny, B%nz))
-            curladv = 0.
-            if (index(func_c, "a-") /= 0) then
-                allocate(curladvu(B%nx, B%ny, B%nz), &
-                         curladvv(B%nx, B%ny, B%nz), &
-                         curladvw(B%nx, B%ny, B%nz))
-                curladvu = 0.; curladvv = 0.; curladvw = 0.
+    
+        ! Output variable list (vl)
+        ! Group c: Simple curl of momentum terms
+        vl_c(1)%name = "res"      ; vl_c(1)%long_name = "Residual (lhs)"
+        vl_c(2)%name = "curlnonl" ; vl_c(2)%long_name = "Curl of nonlinear term (rhs)"
+        vl_c(3)%name = "curlpgrad"; vl_c(3)%long_name = "Curl of pressure gradient (rhs)"
+        vl_c(4)%name = "curlhdiff"; vl_c(4)%long_name = "Curl of horizontal diffusion (rhs)"
+        vl_c(5)%name = "curlvdiff"; vl_c(5)%long_name = "Curl of vertical diffusion (rhs)"
+        vl_c(6)%name = "betav"    ; vl_c(6)%long_name = "Planetary vorticity advection (rhs)"
+        vl_c(7)%name = "stretchp" ; vl_c(7)%long_name = "Planetary vorticity stretching (rhs)"
+        vl_c(8)%name = "errcor"   ; vl_c(8)%long_name = "Error from decomposing curl(-fv, fu) (rhs)"
+        ! Group a: Offline curl of advection
+        vl_a(1)%name = "curladv"  ; vl_a(1)%long_name = "Curl of advection (offline) (rhs)"
+        ! Group aD: For group a debug
+        vl_aD(1)%name = "curladvu"; vl_aD(2)%name = "curladvv"; vl_aD(3)%name = "curladvw"; 
+        ! Group m: Offline curl of metric
+        vl_m(1)%name = "curlmet"  ; vl_m(1)%long_name = "Curl of metric (offline) (rhs)"
+        ! Group d: Offline decomposition of curl advection
+        vl_d(1)%name = "advu"     ; vl_d(1)%long_name = "Relative vorticity advection zonal (rhs)"
+        vl_d(2)%name = "advv"     ; vl_d(2)%long_name = "Relative vorticity advection meridional (rhs)"
+        vl_d(3)%name = "advw"     ; vl_d(3)%long_name = "Relative vorticity advection vertical (rhs)"
+        vl_d(4)%name = "twix"     ; vl_d(4)%long_name = "Relative vorticity tilting zonal (rhs)"
+        vl_d(5)%name = "twiy"     ; vl_d(5)%long_name = "Relative vorticity tilting meridional (rhs)"
+        vl_d(6)%name = "twiz"     ; vl_d(6)%long_name = "Relative vorticity stretching (rhs)"
+        vl_d(7)%name = "erradv"   ; vl_d(7)%long_name = "Error from decomposing advection (rhs)"
+        ! Group dD: For group d debug
+        vl_dD( 1)%name = "advu_x"; vl_dD( 2)%name = "advu_y"
+        vl_dD( 3)%name = "advv_x"; vl_dD( 4)%name = "advv_y"
+        vl_dD( 5)%name = "advw_x"; vl_dD( 6)%name = "advw_y"
+        vl_dD( 7)%name = "twix_x"; vl_dD( 8)%name = "twix_y"
+        vl_dD( 9)%name = "twiy_x"; vl_dD(10)%name = "twiy_y"
+        vl_dD(11)%name = "twiz_x"; vl_dD(12)%name = "twiz_y"
+        vl_dD(13)%name = "erax_x"; vl_dD(14)%name = "erax_y"
+        vl_dD(15)%name = "eray_x"; vl_dD(16)%name = "eray_y"
+        vl_dD(17)%name = "eraz_x"; vl_dD(18)%name = "eraz_y"
+        ! Group e: Difference between curlnonl and offline nonlinear
+        vl_e(1)%name = "errsub"   ; vl_e(1)%long_name = "Error from offline calculated advection (rhs)"
+        ! Group f: Curl of advection using output flues
+        vl_f(1)%name = "curladvf" ; vl_f(1)%long_name = "Curl of advection using output fluxes (ueu, uev, vnu, vnv, wtu, wtv) (rhs)"
+    
+        ! Wrapper group to control on/off of the variable groups
+        vgrp(1)%name = "c" ; vgrp(1)%vlist => vl_c
+        vgrp(2)%name = "a" ; vgrp(2)%vlist => vl_a
+        vgrp(3)%name = "a-"; vgrp(3)%vlist => vl_aD
+        vgrp(4)%name = "m" ; vgrp(4)%vlist => vl_m
+        vgrp(5)%name = "d" ; vgrp(5)%vlist => vl_d
+        vgrp(6)%name = "d-"; vgrp(6)%vlist => vl_dD
+        vgrp(7)%name = "e" ; vgrp(7)%vlist => vl_e
+        vgrp(8)%name = "f" ; vgrp(8)%vlist => vl_f
+    
+        do ig = 1, size(vgrp)
+            if (index(func, trim(vgrp(ig)%name)) /= 0) then 
+                vgrp(ig)%key = .True.
+                do iv = 1, size(vgrp(ig)%vlist)
+                    allocate(vgrp(ig)%vlist(iv)%value(B%nx, B%ny, B%nz))
+                    vgrp(ig)%vlist(iv)%value = 0.
+                enddo
             endif
-        endif
-        if (index(func_c, "f") /= 0) then
-            allocate(curladvf(B%nx, B%ny, B%nz))
-            curladvf = 0.
-        endif
-        if (index(func_c, "d") /= 0) then
-            allocate(advu (B%nx, B%ny, B%nz), advv (B%nx, B%ny, B%nz), advw (B%nx, B%ny, B%nz), &
-                     advVx(B%nx, B%ny, B%nz), advVy(B%nx, B%ny, B%nz), advVz(B%nx, B%ny, B%nz), err_nldecomp(B%nx, B%ny, B%nz))
-            advu  = 0.; advv  = 0.; advw  = 0.
-            advVx = 0.; advVy = 0.; advVz = 0.; err_nldecomp = 0.
-            if (index(func_c, "d-") /= 0 .or. index(func_c, "d#-") /= 0) then 
-                allocate(advu_x  (B%nx, B%ny, B%nz), advv_x  (B%nx, B%ny, B%nz), advw_x  (B%nx, B%ny, B%nz), &
-                         advVx_x (B%nx, B%ny, B%nz), advVy_x (B%nx, B%ny, B%nz), advVz_x (B%nx, B%ny, B%nz), &
-                         errnl_ux(B%nx, B%ny, B%nz), errnl_vx(B%nx, B%ny, B%nz), errnl_wx(B%nx, B%ny, B%nz), &
-                         advu_y  (B%nx, B%ny, B%nz), advv_y  (B%nx, B%ny, B%nz), advw_y  (B%nx, B%ny, B%nz), &
-                         advVx_y (B%nx, B%ny, B%nz), advVy_y (B%nx, B%ny, B%nz), advVz_y (B%nx, B%ny, B%nz), &
-                         errnl_uy(B%nx, B%ny, B%nz), errnl_vy(B%nx, B%ny, B%nz), errnl_wy(B%nx, B%ny, B%nz))
-                advu_x = 0.; advv_x = 0; advw_x = 0.; advVx_x = 0.; advVy_x = 0.; advVz_x = 0.
-                errnl_ux = 0.; errnl_vx = 0.; errnl_wx = 0.
-                advu_y = 0.; advv_y = 0; advw_y = 0.; advVx_y = 0.; advVy_y = 0.; advVz_y = 0.;
-                errnl_uy = 0.; errnl_vy = 0.; errnl_wy = 0.  
-            endif                   
-        endif
+        enddo
     endsubroutine
 
     subroutine release_zetavars_input(func)
         implicit none
-        character(len=*), intent(in), optional :: func
-        character(len=10) :: func_c
+        character(len=*), intent(in) :: func
 
         write(*, *)
         write(*, '(A)') '-----------------------------------------------------'
         write(*, '(A)') 'Releasing input variables'
-        if (present(func) .and. trim(func) /= "") then
-            func_c = func
-        else
-            call warning_msg("noinput")
-            return
-        endif
 
-        if (index(func_c, "a") /= 0 .or. index(func_c, "m") /= 0 .or. &
-            index(func_c, "d") /= 0 .or. index(func_c, "c") /= 0) then
+        if (index(func, "a") /= 0 .or. index(func, "m") /= 0 .or. &
+            index(func, "d") /= 0 .or. index(func, "c") /= 0) then
             deallocate(uc, vc)
         endif
-        if (index(func_c, "c") /= 0) then
+        if (index(func, "c") /= 0) then
             deallocate(advx, advy, gradx, grady, hdiffx, hdiffy, vdiffx, vdiffy, ssh)
         endif
-        if (index(func_c, "a") /= 0 .or. index(func_c, "d") /= 0) then
+        if (index(func, "a") /= 0 .or. index(func, "d") /= 0) then
             deallocate(wc)
         endif
-        if (index(func_c, "f") /= 0) then
+        if (index(func, "f") /= 0) then
             deallocate(ueu, uev, vnu, vnv, wtu, wtv)
         endif
     endsubroutine
 
-    subroutine release_zetavars_output(func)
+    subroutine release_zetavars_output()
         implicit none
-        character(len=*), intent(in), optional :: func
-        character(len=10) :: func_c
-
-        write(*, *)
-        write(*, '(A)') '-----------------------------------------------------'
-        write(*, '(A)') 'Releasing output variables'
-        if (present(func) .and. trim(func) /= "") then
-            func_c = func
-        else
-            call warning_msg("noinput")
-            return
-        endif
-
-        if (index(func_c, "c") /= 0) then
-            deallocate(curlnonl, curlpgrad, res, curlhdiff, curlvdiff, betav, stretchp, err_cor)
-        endif
-        if (index(func_c, "e") /= 0) then
-            deallocate(err_nlsub)
-        endif
-        if (index(func_c, "m") /= 0) then
-            deallocate(curlmet)
-        endif
-        if (index(func_c, "a") /= 0) then
-            deallocate(curladv)
-            if (index(func_c, "a-") /= 0) then
-                deallocate(curladvu, curladvv, curladvw)
+        integer :: ig, iv
+        do ig = 1, size(vgrp)
+            if (vgrp(ig)%key) then 
+                do iv = 1, size(vgrp(ig)%vlist)
+                    deallocate(vgrp(ig)%vlist(iv)%value)
+                enddo
             endif
-        endif
-        if (index(func_c, "f") /= 0) then
-            deallocate(curladvf)
-        endif
-        if (index(func_c, "d") /= 0) then
-            deallocate(advu, advv, advw, advVx, advVy, advVz, err_nldecomp)
-            if (index(func_c, "d-") /= 0 .or. index(func_c, "d#-") /= 0) then 
-                deallocate(advu_x, advv_x, advw_x, advVx_x, advVy_x, advVz_x, errnl_ux, errnl_vx, errnl_wx, &
-                           advu_y, advv_y, advw_y, advVx_y, advVy_y, advVz_y, errnl_uy, errnl_vy, errnl_wy)
-           endif
-        endif
-    endsubroutine
-
-    subroutine warning_msg(incident)
-        character(len=*), intent(in) :: incident
-        select case (trim(incident))
-            case("noinput")
-                write(*, '(A)') "Neither cmode or func is given. Exit."
-        endselect
+        enddo
     endsubroutine
 endmodule

@@ -34,15 +34,14 @@ Program main
     ! Output file name and creatation
     call get_yyyymmdd(T%yrlist(iyr), it, &
                         T%yrnm_clm, T%avnm_clm, fn_vor%dlm, yyyymmdd)
-    write(fn_vor%fn, '(A, A, A, A, A)') &
-            trim(fn_vor%dir), "test_", trim(yyyymmdd), trim(fn_vor%sfx), '.nc'
+    fn_vor%fn = trim(fn_vor%dir) // "test_" // trim(yyyymmdd) // trim(fn_vor%sfx) // '.nc'
     write(*, *)
     write(*, '(A)') '  ---------------------------------------------------'
     write(*, '(A, A)') '  Outputing file(s): ', trim(fn_vor%fn)
 
     ! Output files
-    call output_sf(func, fn_vor%fn)
+    call output_sf(fn_vor%fn)
     ! Release working variables
-    call release_zetavars_output(func = func)
+    call release_zetavars_output()
     write(*, '(A, A)') "  Finished ", yyyymmdd
 endprogram
