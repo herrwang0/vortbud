@@ -565,12 +565,12 @@ module io
         enddo
         write(*, *)
         write(*, '(A)') "List of sections: "
-        write(*, '(A)', advance="no") "  Start: "
+        write(*, '(A9)', advance="no") "  Start: "
         do ida = 1, T%nsec
             write(*, '(I3, A)', advance="no") T%seclist(ida, 1), ' '
         enddo
         write(*, *)
-        write(*, '(A)', advance="no") "  End: "
+        write(*, '(A9)', advance="no") "  End: "
         do ida = 1, T%nsec
             write(*, '(I3, A)', advance="no") T%seclist(ida, 2), ' '
         enddo
@@ -729,146 +729,6 @@ module io
             endif
         enddo
     endsubroutine
-
-    subroutine output_me(func_m, fn_m, fn_me)
-        use netcdf
-        use ncio, only : nc_read
-        implicit none
-        character(len = *), intent(in) :: func_m, fn_m, fn_me
-        integer :: ncid, stat_create, stat_defdim, stat_defvar, stat_putatt, stat_inqvar, &
-                   stat_getvar, stat_putvar, stat_io
-        integer :: dimid_lon, dimid_lat, dimid_dep, dimid_time
-        integer :: varid_lon, varid_lat, varid_dep, varid_time
-        type(zetavar), dimension(:), target :: vl_aM(1), vl_mM(1), vl_dM(7)
-        type(vargrp), dimension(3) :: vgrp_m
-        integer :: ig, iv, idx
-        integer, dimension(:) :: idx_regular(2) = (/1, 7/), idx_me(3) = (/2, 4, 5/)
-        character(len = 10) :: vnm
-        real(kind=kd_r), dimension(B%nx, B%ny, B%nz, 1) :: WORK
-    
-        write(*, *)
-        write(*, '(A)') '-----------------------------------------------------'
-        write(*, '(A, A)') 'Creating output file: ', trim(fn_me)
-        write(*, '(A)') '  Start netcdf define ...'
-    
-        ! Create a vgrp_m for the mean components. vgrp is used for the eddy part
-        !   For simplicity, debug groups are not included
-        vl_aM(1)%name = trim(vgrp(2)%vlist(1)%name) // '_m'
-        vl_aM(1)%long_name = '(mean) ' // trim(vgrp(2)%vlist(1)%long_name)
-    
-        vl_mM(1)%name = trim(vgrp(4)%vlist(1)%name) // '_m'
-        vl_mM(1)%long_name = '(mean) ' // trim(vgrp(4)%vlist(1)%long_name)
-    
-        do iv = 1, size(vl_dM)
-            vl_dM(iv)%name = trim(vgrp(5)%vlist(iv)%name) // '_m'
-            vl_dM(iv)%long_name = '(mean) ' // trim(vgrp(5)%vlist(iv)%long_name)
-        enddo
-    
-        vgrp_m(1)%name = "aM"; vgrp_m(1)%vlist => vl_aM
-        vgrp_m(2)%name = "mM"; vgrp_m(2)%vlist => vl_mM
-        vgrp_m(3)%name = "dM"; vgrp_m(3)%vlist => vl_dM
-        do ig = 1, size(vgrp_m)
-            if (index(func_m, trim(vgrp_m(ig)%name)) /= 0) vgrp_m(ig)%key = .True.
-        enddo
-        
-        stat_create = nf90_create(trim(fn_me), cmode=or(nf90_clobber,nf90_64bit_offset), ncid=ncid)
-    
-        ! Dimension
-        stat_defdim = nf90_def_dim(ncid, "nlon", B%nx, dimid_lon)
-        stat_defdim = nf90_def_dim(ncid, "nlat", B%ny, dimid_lat)
-        stat_defdim = nf90_def_dim(ncid, "z_t" , B%nz, dimid_dep)
-        stat_defdim = nf90_def_dim(ncid, "time", NF90_UNLIMITED, dimid_time)
-    
-        ! Coordinates
-        stat_defvar = nf90_def_var(ncid, "TLONG", NF90_FLOAT, &
-           (/dimid_lon, dimid_lat/), varid_lon)
-        stat_defvar = nf90_def_var(ncid, "TLAT",  NF90_FLOAT, &
-           (/dimid_lon, dimid_lat/), varid_lat)
-        stat_defvar = nf90_def_var(ncid, "z_t" ,  NF90_FLOAT, dimid_dep , varid_dep )
-        stat_defvar = nf90_def_var(ncid, "time" , NF90_FLOAT, dimid_time, varid_time)
-       
-        ! curladv
-        vgrp(2)%vlist(1)%name = vgrp(2)%vlist(1)%name // '_e'
-        vgrp(2)%vlist(1)%long_name = '(eddy) ' // trim(vgrp(2)%vlist(1)%long_name)
-        ! curlmet
-        vgrp(4)%vlist(1)%name = vgrp(4)%vlist(1)%name // '_e'
-        vgrp(4)%vlist(1)%long_name = '(eddy) ' // trim(vgrp(4)%vlist(1)%long_name)
-        ! errsub
-        vgrp(7)%vlist(1)%long_name = '(eddy) ' // trim(vgrp(7)%vlist(1)%long_name)
-        ! decomposed adv
-        do iv = 1, size(vgrp(5)%vlist)
-            vgrp(5)%vlist(iv)%name = vgrp(5)%vlist(iv)%name // '_e'
-            vgrp(5)%vlist(iv)%long_name = '(eddy) ' // trim(vgrp(5)%vlist(iv)%long_name)
-        enddo
-    
-        do ig = 1, size(vgrp)
-            if ( vgrp(ig)%key ) then 
-                do iv = 1, size(vgrp(ig)%vlist)
-                    stat_defvar = nf90_def_var(ncid, vgrp(ig)%vlist(iv)%name, nc_xtype, &
-                    (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), vgrp(ig)%vlist(iv)%varid)
-                    stat_putatt = nf90_put_att(ncid, vgrp(ig)%vlist(iv)%varid, "Units", trim(vgrp(ig)%vlist(iv)%Units))
-                    stat_putatt = nf90_put_att(ncid, vgrp(ig)%vlist(iv)%varid, "coordinates", trim(vgrp(ig)%vlist(iv)%coordinates))
-                    stat_putatt = nf90_put_att(ncid, vgrp(ig)%vlist(iv)%varid, "long_name", vgrp(ig)%vlist(iv)%long_name)
-                    stat_putatt = nf90_put_att(ncid, vgrp(ig)%vlist(iv)%varid, "missing_value", MVALUE)
-                enddo
-            endif
-        enddo
-    
-        do ig = 1, size(vgrp_m)
-            if ( vgrp_m(ig)%key ) then 
-                do iv = 1, size(vgrp_m(ig)%vlist)
-                    stat_defvar = nf90_def_var(ncid, vgrp_m(ig)%vlist(iv)%name, nc_xtype, &
-                    (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), vgrp_m(ig)%vlist(iv)%varid)
-                    stat_putatt = nf90_put_att(ncid, vgrp_m(ig)%vlist(iv)%varid, "Units", trim(vgrp_m(ig)%vlist(iv)%Units))
-                    stat_putatt = nf90_put_att(ncid, vgrp_m(ig)%vlist(iv)%varid, "coordinates", trim(vgrp_m(ig)%vlist(iv)%coordinates))
-                    stat_putatt = nf90_put_att(ncid, vgrp_m(ig)%vlist(iv)%varid, "long_name", vgrp_m(ig)%vlist(iv)%long_name)
-                    stat_putatt = nf90_put_att(ncid, vgrp_m(ig)%vlist(iv)%varid, "missing_value", MVALUE)
-                enddo
-            endif 
-        enddo
-    
-        stat_create = nf90_enddef(ncid)
-        write(*, '(A, I1)') "  Finished netcdf define!", stat_create
-    
-        ! Writing cooordinates
-        stat_putvar = nf90_put_var(ncid, varid_lat,  tlat , &
-           start = (/1, 1/), count = (/B%nx, B%ny/))
-        stat_putvar = nf90_put_var(ncid, varid_lon,  tlong, &
-           start = (/1, 1/), count = (/B%nx, B%ny/))
-        stat_putvar = nf90_put_var(ncid, varid_dep,  z_t)
-    
-        write(*, *)
-        write(*, '(A)') '  Start writing zeta mean/eddy file'
-    
-        ! Terms other than nonlinear components
-        do idx = 1, size(idx_regular)
-            ig = idx_regular(idx)
-            if ( vgrp(ig)%key ) then 
-                do iv = 1, size(vgrp(ig)%vlist)
-                    stat_putvar = nf90_put_var(ncid, vgrp(ig)%vlist(iv)%varid, vgrp(ig)%vlist(iv)%value, &
-                        start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
-                enddo
-            endif 
-        enddo
-    
-        ! mean and eddy nonlinear
-        do idx = 1, size(idx_me)
-            ig = idx_me(idx)
-            if ( vgrp(ig)%key .and. vgrp_m(ig)%key ) then 
-                do iv = 1, size(vgrp(ig)%vlist)
-                    vnm = trim(vgrp(ig)%vlist(iv)%name)
-                    call nc_read(fn_m, vnm(1:len(trim(vnm))-2), WORK);
-                    stat_putvar = nf90_put_var(ncid, vgrp_m(3)%vlist(iv)%varid, WORK(:,:,:,1), &
-                        start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
-                    stat_putvar = nf90_put_var(ncid, vgrp(ig)%vlist(iv)%varid, vgrp(ig)%vlist(iv)%value - WORK(:,:,:,1), &
-                        start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
-                enddo
-            endif
-        enddo
-    
-        stat_io = nf90_close(ncid)
-        write(*, '(A, I1)') '  Finished writing zeta mean/eddy file ', stat_io
-    endsubroutine
     
     ! Get yyyymmdd from year and doy.
     ! iyr and idoy is overriden by yrnm_clm and avnm_clm.
@@ -919,6 +779,7 @@ module io
         dd = idoy - sum(eom(1:mm)) + eom(mm)
     endsubroutine
 
+    ! Outputing single timestep file (Wrapper of the create_output, write_output and close_output)
     subroutine output_sf(fn_zeta)
         implicit none
         character(len=*), intent(in) :: fn_zeta
@@ -934,32 +795,27 @@ module io
         implicit none
         character(len=*), intent(in) :: fn_zeta
         integer, intent(inout) :: ncid_zeta
-        integer :: stat_create, stat_defdim, stat_defvar, stat_putatt, stat_inqvar, &
-                   stat_getvar, stat_putvar, stat_io
         integer :: dimid_lon, dimid_lat, dimid_dep, dimid_time
         integer :: varid_lon, varid_lat, varid_dep, varid_time
-        integer :: ig, iv
+        integer :: stat, ig, iv
     
         write(*, *)
         write(*, '(A)') '-----------------------------------------------------'
-        write(*, '(A, A)') 'Creating output file: ', trim(fn_zeta)
-        write(*, '(A)') '  Start netcdf define ...'
     
-        stat_create = nf90_create(trim(fn_zeta), cmode=or(nf90_clobber,nf90_64bit_offset), ncid=ncid_zeta)
+        stat = nf90_create(trim(fn_zeta), cmode=or(nf90_clobber,nf90_64bit_offset), ncid=ncid_zeta)
+        write(*, '(A, A, A, I2)') 'Creating output file: ', trim(fn_zeta), ': ', stat
     
         ! Dimension
-        stat_defdim = nf90_def_dim(ncid_zeta, "nlon", B%nx, dimid_lon)
-        stat_defdim = nf90_def_dim(ncid_zeta, "nlat", B%ny, dimid_lat)
-        stat_defdim = nf90_def_dim(ncid_zeta, "z_t" , B%nz, dimid_dep)
-        stat_defdim = nf90_def_dim(ncid_zeta, "time", NF90_UNLIMITED, dimid_time)
+        stat = nf90_def_dim(ncid_zeta, "nlon", B%nx, dimid_lon)
+        stat = nf90_def_dim(ncid_zeta, "nlat", B%ny, dimid_lat)
+        stat = nf90_def_dim(ncid_zeta, "z_t" , B%nz, dimid_dep)
+        stat = nf90_def_dim(ncid_zeta, "time", NF90_UNLIMITED, dimid_time)
     
         ! Coordinates
-        stat_defvar = nf90_def_var(ncid_zeta, "TLONG", NF90_FLOAT, &
-           (/dimid_lon, dimid_lat/), varid_lon)
-        stat_defvar = nf90_def_var(ncid_zeta, "TLAT",  NF90_FLOAT, &
-           (/dimid_lon, dimid_lat/), varid_lat)
-        stat_defvar = nf90_def_var(ncid_zeta, "z_t" ,  NF90_FLOAT, dimid_dep , varid_dep )
-        stat_defvar = nf90_def_var(ncid_zeta, "time" , NF90_FLOAT, dimid_time, varid_time)
+        stat = nf90_def_var(ncid_zeta, "TLONG", NF90_FLOAT, (/dimid_lon, dimid_lat/), varid_lon)
+        stat = nf90_def_var(ncid_zeta, "TLAT",  NF90_FLOAT, (/dimid_lon, dimid_lat/), varid_lat)
+        stat = nf90_def_var(ncid_zeta, "z_t" ,  NF90_FLOAT, dimid_dep , varid_dep )
+        stat = nf90_def_var(ncid_zeta, "time" , NF90_FLOAT, dimid_time, varid_time)
     
         ! For climatological input
         if (trim(T%yrnm_clm) /= "") then
@@ -978,57 +834,196 @@ module io
         do ig = 1, size(vgrp)
             if ( vgrp(ig)%key ) then 
                 do iv = 1, size(vgrp(ig)%vlist)
-                    stat_defvar = nf90_def_var(ncid_zeta, vgrp(ig)%vlist(iv)%name, nc_xtype, &
-                    (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), vgrp(ig)%vlist(iv)%varid)
-                    stat_putatt = nf90_put_att(ncid_zeta, vgrp(ig)%vlist(iv)%varid, "Units", trim(vgrp(ig)%vlist(iv)%Units))
-                    stat_putatt = nf90_put_att(ncid_zeta, vgrp(ig)%vlist(iv)%varid, "coordinates", trim(vgrp(ig)%vlist(iv)%coordinates))
-                    stat_putatt = nf90_put_att(ncid_zeta, vgrp(ig)%vlist(iv)%varid, "long_name", trim(vgrp(ig)%vlist(iv)%long_name))
-                    stat_putatt = nf90_put_att(ncid_zeta, vgrp(ig)%vlist(iv)%varid, "missing_value", MVALUE)
+                    stat = nf90_def_var(ncid_zeta, vgrp(ig)%vlist(iv)%name, nc_xtype, &
+                      (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), vgrp(ig)%vlist(iv)%varid)
+                    stat = nf90_put_att(ncid_zeta, vgrp(ig)%vlist(iv)%varid, "Units", trim(vgrp(ig)%vlist(iv)%Units))
+                    stat = nf90_put_att(ncid_zeta, vgrp(ig)%vlist(iv)%varid, "coordinates", trim(vgrp(ig)%vlist(iv)%coordinates))
+                    stat = nf90_put_att(ncid_zeta, vgrp(ig)%vlist(iv)%varid, "long_name", trim(vgrp(ig)%vlist(iv)%long_name))
+                    stat = nf90_put_att(ncid_zeta, vgrp(ig)%vlist(iv)%varid, "missing_value", MVALUE)
                 enddo
             endif
         enddo
-        stat_create = nf90_enddef(ncid_zeta)
-        write(*, '(A, I1)') "  Finished netcdf define: ", stat_create
+        stat = nf90_enddef(ncid_zeta)
+        write(*, '(A, I2)') "  Finished netcdf define: ", stat
     
         ! Writing cooordinates
-        stat_putvar = nf90_put_var(ncid_zeta, varid_lat,  tlat , &
-           start = (/1, 1/), count = (/B%nx, B%ny/))
-        stat_putvar = nf90_put_var(ncid_zeta, varid_lon,  tlong, &
-           start = (/1, 1/), count = (/B%nx, B%ny/))
-        stat_putvar = nf90_put_var(ncid_zeta, varid_dep,  z_t)
+        stat = nf90_put_var(ncid_zeta, varid_lat, tlat , start = (/1, 1/), count = (/B%nx, B%ny/))
+        stat = nf90_put_var(ncid_zeta, varid_lon, tlong, start = (/1, 1/), count = (/B%nx, B%ny/))
+        stat = nf90_put_var(ncid_zeta, varid_dep,  z_t)
     endsubroutine
 
     subroutine write_output(ncid_zeta)
         use netcdf
         implicit none
         integer, intent(in) :: ncid_zeta
-        integer :: stat_putvar
-        integer :: ig, iv
+        integer :: stat, ig, iv
     
         write(*, *)
         write(*, '(A)') '-----------------------------------------------------'
-        write(*, '(A)') 'Start writing zeta equation file ...'
+        write(*, '(A)') 'Writing zeta equation file'
     
         do ig = 1, size(vgrp)
             if ( vgrp(ig)%key ) then 
                 do iv = 1, size(vgrp(ig)%vlist)
-                    stat_putvar = nf90_put_var(ncid_zeta, vgrp(ig)%vlist(iv)%varid, vgrp(ig)%vlist(iv)%value, &
+                    stat = nf90_put_var(ncid_zeta, vgrp(ig)%vlist(iv)%varid, vgrp(ig)%vlist(iv)%value, &
                         start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                    write(*, '(A2, A9, A, I2)') '  ', trim(vgrp(ig)%vlist(iv)%name), ': ', stat
                 enddo
             endif
         enddo
-        write(*, '(A)') '  Finished writing'
     endsubroutine
     
     subroutine close_output(ncid_zeta)
         use netcdf
         implicit none
         integer, intent(in) :: ncid_zeta
-        integer :: stat_io
+        integer :: stat
 
+        stat = nf90_close(ncid_zeta)
+        write(*, '(A, I2)') 'Closing output file: ', stat
+    endsubroutine
+
+    ! Calculating and outputing mean/eddy file
+    subroutine output_me(fn_m, fn_me)
+        use netcdf
+        use ncio, only : nc_read
+        implicit none
+        character(len = *), intent(in) :: fn_m, fn_me
+        type(zetavar), dimension(:), target :: vl_aM(1), vl_mM(1), vl_dM(7)
+        type(vargrp), dimension(3) :: vgrp_m
+        integer, dimension(:), parameter :: idx_regular(2) = (/1, 7/), idx_me(3) = (/2, 4, 5/)
+        integer :: dimid_lon, dimid_lat, dimid_dep, dimid_time
+        integer :: varid_lon, varid_lat, varid_dep, varid_time
+        integer :: ncid, stat, ig, iv, idx
+        character(len = 10) :: vnm
+        real(kind=kd_r), dimension(B%nx, B%ny, B%nz, 1) :: WORK
+    
         write(*, *)
-        write(*, '(A)') 'Closing output files'
-        stat_io = nf90_close(ncid_zeta)
+        write(*, '(A)') '-----------------------------------------------------'
+    
+        ! Create a vgrp_m for the mean components. vgrp is used for the eddy part
+        !   For simplicity, debug groups are not included
+        vl_aM(1)%name = trim(vgrp(2)%vlist(1)%name) // '_m'
+        vl_aM(1)%long_name = '(mean) ' // trim(vgrp(2)%vlist(1)%long_name)
+    
+        vl_mM(1)%name = trim(vgrp(4)%vlist(1)%name) // '_m'
+        vl_mM(1)%long_name = '(mean) ' // trim(vgrp(4)%vlist(1)%long_name)
+    
+        do iv = 1, size(vl_dM)
+            vl_dM(iv)%name = trim(vgrp(5)%vlist(iv)%name) // '_m'
+            vl_dM(iv)%long_name = '(mean) ' // trim(vgrp(5)%vlist(iv)%long_name)
+        enddo
+    
+        vgrp_m(1)%name = "aM"; vgrp_m(1)%vlist => vl_aM
+        vgrp_m(2)%name = "mM"; vgrp_m(2)%vlist => vl_mM
+        vgrp_m(3)%name = "dM"; vgrp_m(3)%vlist => vl_dM
+        do idx = 1, size(idx_me)
+            ig = idx_me(idx)
+            if ( vgrp(ig)%key ) vgrp_m(idx)%key = .True.
+        enddo
+
+        ! Modify nonlinear term names
+        ! curladv
+        vgrp(2)%vlist(1)%name = trim(vgrp(2)%vlist(1)%name) // '_e'
+        vgrp(2)%vlist(1)%long_name = '(eddy) ' // trim(vgrp(2)%vlist(1)%long_name)
+        ! curlmet
+        vgrp(4)%vlist(1)%name = trim(vgrp(4)%vlist(1)%name) // '_e'
+        vgrp(4)%vlist(1)%long_name = '(eddy) ' // trim(vgrp(4)%vlist(1)%long_name)
+        ! errsub
+        vgrp(7)%vlist(1)%long_name = '(eddy) ' // trim(vgrp(7)%vlist(1)%long_name)
+        ! decomposed adv
+        do iv = 1, size(vgrp(5)%vlist)
+            vgrp(5)%vlist(iv)%name = trim(vgrp(5)%vlist(iv)%name) // '_e'
+            vgrp(5)%vlist(iv)%long_name = '(eddy) ' // trim(vgrp(5)%vlist(iv)%long_name)
+        enddo
+    
+        stat = nf90_create(trim(fn_me), cmode=or(nf90_clobber,nf90_64bit_offset), ncid=ncid)
+        write(*, '(A, A, A, I2)') 'Creating output file: ', trim(fn_me), ': ', stat
+        write(*, '(A, A)') '  Using mean field file: ', trim(fn_m)
+    
+        ! Dimension
+        stat = nf90_def_dim(ncid, "nlon", B%nx, dimid_lon)
+        stat = nf90_def_dim(ncid, "nlat", B%ny, dimid_lat)
+        stat = nf90_def_dim(ncid, "z_t" , B%nz, dimid_dep)
+        stat = nf90_def_dim(ncid, "time", NF90_UNLIMITED, dimid_time)
+    
+        ! Coordinates
+        stat = nf90_def_var(ncid, "TLONG", NF90_FLOAT, &
+           (/dimid_lon, dimid_lat/), varid_lon)
+        stat = nf90_def_var(ncid, "TLAT",  NF90_FLOAT, &
+           (/dimid_lon, dimid_lat/), varid_lat)
+        stat = nf90_def_var(ncid, "z_t" ,  NF90_FLOAT, dimid_dep , varid_dep )
+        stat = nf90_def_var(ncid, "time" , NF90_FLOAT, dimid_time, varid_time)
+       
+        do ig = 1, size(vgrp)
+            if ( vgrp(ig)%key ) then 
+                do iv = 1, size(vgrp(ig)%vlist)
+                    stat = nf90_def_var(ncid, vgrp(ig)%vlist(iv)%name, nc_xtype, &
+                      (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), vgrp(ig)%vlist(iv)%varid)
+                    stat = nf90_put_att(ncid, vgrp(ig)%vlist(iv)%varid, "Units", trim(vgrp(ig)%vlist(iv)%Units))
+                    stat = nf90_put_att(ncid, vgrp(ig)%vlist(iv)%varid, "coordinates", trim(vgrp(ig)%vlist(iv)%coordinates))
+                    stat = nf90_put_att(ncid, vgrp(ig)%vlist(iv)%varid, "long_name", vgrp(ig)%vlist(iv)%long_name)
+                    stat = nf90_put_att(ncid, vgrp(ig)%vlist(iv)%varid, "missing_value", MVALUE)
+                enddo
+            endif
+        enddo
+    
+        do ig = 1, size(vgrp_m)
+            if ( vgrp_m(ig)%key ) then 
+                do iv = 1, size(vgrp_m(ig)%vlist)
+                    stat = nf90_def_var(ncid, vgrp_m(ig)%vlist(iv)%name, nc_xtype, &
+                      (/dimid_lon, dimid_lat, dimid_dep, dimid_time/), vgrp_m(ig)%vlist(iv)%varid)
+                    stat = nf90_put_att(ncid, vgrp_m(ig)%vlist(iv)%varid, "Units", trim(vgrp_m(ig)%vlist(iv)%Units))
+                    stat = nf90_put_att(ncid, vgrp_m(ig)%vlist(iv)%varid, "coordinates", trim(vgrp_m(ig)%vlist(iv)%coordinates))
+                    stat = nf90_put_att(ncid, vgrp_m(ig)%vlist(iv)%varid, "long_name", vgrp_m(ig)%vlist(iv)%long_name)
+                    stat = nf90_put_att(ncid, vgrp_m(ig)%vlist(iv)%varid, "missing_value", MVALUE)
+                enddo
+            endif 
+        enddo
+    
+        stat = nf90_enddef(ncid)
+        write(*, '(A, I2)') "  Finished netcdf define: ", stat
+    
+        ! Writing cooordinates
+        stat = nf90_put_var(ncid, varid_lat, tlat , start = (/1, 1/), count = (/B%nx, B%ny/))
+        stat = nf90_put_var(ncid, varid_lon, tlong, start = (/1, 1/), count = (/B%nx, B%ny/))
+        stat = nf90_put_var(ncid, varid_dep, z_t)
+    
+        write(*, *)
+        write(*, '(A)') '-----------------------------------------------------'
+        write(*, '(A)') 'Writing zeta mean/eddy file'
+    
+        ! Terms other than nonlinear components
+        do idx = 1, size(idx_regular)
+            ig = idx_regular(idx)
+            if ( vgrp(ig)%key ) then 
+                do iv = 1, size(vgrp(ig)%vlist)
+                    stat = nf90_put_var(ncid, vgrp(ig)%vlist(iv)%varid, vgrp(ig)%vlist(iv)%value, &
+                        start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                    write(*, '(A2, A9, A, I2)') '  ', trim(vgrp(ig)%vlist(iv)%name), ': ', stat
+                enddo
+            endif 
+        enddo
+    
+        ! mean and eddy nonlinear
+        do idx = 1, size(idx_me)
+            ig = idx_me(idx)
+            if ( vgrp(ig)%key ) then 
+                do iv = 1, size(vgrp(ig)%vlist)
+                    vnm = trim(vgrp(ig)%vlist(iv)%name)
+                    call nc_read(fn_m, vnm(1:len(trim(vnm))-2), WORK);
+                    stat = nf90_put_var(ncid, vgrp_m(idx)%vlist(iv)%varid, WORK(:,:,:,1), &
+                        start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                    write(*, '(A2, A9, A, I2)') '  ', trim(vgrp_m(idx)%vlist(iv)%name), ': ', stat
+                    stat = nf90_put_var(ncid, vgrp(ig)%vlist(iv)%varid, vgrp(ig)%vlist(iv)%value - WORK(:,:,:,1), &
+                        start = (/1, 1, 1, 1/), count = (/B%nx, B%ny, B%nz, 1/))
+                    write(*, '(A2, A9, A, I2)') '  ', trim(vgrp(ig)%vlist(iv)%name), ': ', stat
+                enddo
+            endif
+        enddo
+    
+        stat = nf90_close(ncid)
+        write(*, '(A, I2)') 'Closing output file: ', stat
     endsubroutine
 
     ! Check if files for mean exists and contains required variables depending on the calculation mode

@@ -10,20 +10,16 @@ Program main
     logical :: meanfilestat, ifsavesf
 
 !---------------------Initialization--------------------------------------------
-    ! print*, 'Loading parameters ...'
+    ! Loading parameters
     call load_params(func, func_m, func_me)
-    write(*, '(A, A)') "func = ", func
-    write(*, '(A, A)') "func_m = ", func_m
-    write(*, '(A, A)') "func_me = ", func_me
-
-    ! print*, 'Loading grids and constants ...'
+    ! Loading grids and constants
     call load_const()
 
 !--------------------Calculate Mean---------------------------------------------
     if (trim(func_m) /= "") then
         write(*, *)
         write(*, '(A)') '-----------------------------------------------------'
-        write(*, '(A)') '  Checking mean files ...'
+        write(*, '(A)') 'Checking mean files'
         ! Check if using climatology (ifmeanclm = .True.) or annual average
         if (ifmeanclm) then
             slyr = T%nyr
@@ -39,11 +35,11 @@ Program main
                 ! Get filename (fn_vorm%fn) for mean fields 
                 call get_yyyymmdd(T%yrlist(iyr), 0, T%menm_clm, T%meannm(isec), fn_vorm%dlm, yyyymmdd)
                 fn_vorm%fn = trim(fn_vorm%dir) // trim(fn_vorm%pfx) // trim(yyyymmdd) // trim(fn_vorm%sfx) // '.nc'
-                write(*, '(A, A)') '  File ', trim(fn_vorm%fn)
+                write(*, '(A, A)') '  Looking for ', trim(fn_vorm%fn)
 
                 call check_meanfile(func_m, trim(fn_vorm%fn), meanfilestat)
                 if (.not. meanfilestat) then
-                    write(*, '(A)') '    Mean file not found! Creating ...'
+                    write(*, '(A)') '    Not found! Create now'
                     call init_zetavars_input(func_m)
                     call loadave_mom_sf(func_m, T%yrlist(iyr:iyr+slyr-1), &
                                         (/ (ida, ida = T%seclist(isec,1), T%seclist(isec,2)) /), &
@@ -54,13 +50,14 @@ Program main
                     call release_zetavars_input(func_m)
                     call release_zetavars_output()
                 else
-                    write(*, '(A)') '   Status OK!'
+                    write(*, '(A)') '    Found and status OK!'
                 endif
             enddo
         enddo
     endif
 
 !---------------------Main loop-------------------------------------------------
+    write(*, '(A)') '-----------------------------------------------------'
     write(*, '(A)') '-----------------------------------------------------'
     write(*, '(A)') 'Start the main loop'
     do iyr = 1, T%nyr, 1
@@ -105,14 +102,10 @@ Program main
                         call get_yyyymmdd(T%yrlist(iyr), it, &
                                           T%yrnm_clm, T%avnm_clm, fn_vor%dlm, yyyymmdd)
                         fn_vor%fn = trim(fn_vor%dir) // trim(fn_vor%pfx) // trim(yyyymmdd) // trim(fn_vor%sfx) // '.nc'
-                        write(*, *)
-                        write(*, '(A)') '  ---------------------------------------------------'
-                        write(*, '(A, A)') '  Outputing file(s): ', trim(fn_vor%fn)
                         ! Output fields
                         call output_sf(fn_vor%fn)
                         ! Release working variables
                         call release_zetavars_output()
-                        write(*, '(A, A)') "  Finished ", yyyymmdd
                     endif
                  enddo
             endif
@@ -128,11 +121,9 @@ Program main
                 ! Load mean field and Output mean/eddy file
                 call get_yyyymmdd(T%yrlist(iyr), 0, T%menm_clm, T%meannm(isec), fn_vorm%dlm, yyyymmdd)
                 fn_vorm%fn = trim(fn_vorm%dir) // trim(fn_vorm%pfx) // trim(yyyymmdd) // trim(fn_vorm%sfx) // '.nc'
-                write(*, '(A, A)') '  Using file: ', trim(fn_vorm%fn)
                 call get_yyyymmdd(T%yrlist(iyr), 0, "", T%meannm(isec), fn_vore%dlm, yyyymmdd)
                 fn_vore%fn = trim(fn_vore%dir) // trim(fn_vore%pfx) // trim(yyyymmdd) // trim(fn_vore%sfx) // '.nc'
-                write(*, '(A, A)') '  Outputing file: ', trim(fn_vore%fn)
-                call output_me(func_m, fn_vorm%fn, fn_vore%fn)
+                call output_me(fn_vorm%fn, fn_vore%fn)
                 call release_zetavars_output()
            endif
        enddo

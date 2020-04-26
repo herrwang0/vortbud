@@ -5,7 +5,7 @@ flag = -I$(NETCDF_DIR)/include -lnetcdff -lnetcdf
 #flag = -L/Users/hewang/Library/netcdf/lib -lnetcdff  -I/Users/hewang/Library/netcdf/include
 
 zetaeq: zetaeq.x
-debug: debug_zeta.x
+debug: test.x
 
 zetaeq.x: main.f90 $(obj) mod_io.o
 	$(f90c) -o zetaeq.x main.f90 mod_io.o $(obj) $(flag)

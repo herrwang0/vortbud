@@ -90,7 +90,7 @@ module zeta
 
         write(*, *)
         write(*, '(A)') '-----------------------------------------------------'
-        write(*, '(A)'), 'Start calculating voriticity equation'
+        write(*, '(A)'), 'Calculating voriticity equation'
         write(*, '(2A)') "  Function code: ", trim(func)
 
         res       => vl_c(1)%value
@@ -261,39 +261,13 @@ module zeta
             enddo
         enddo
 
-        ! do iy = 1, B%ny
-        !     do ix = 1, B%nx
-        !        where (abs(dzu(ix, iy, :)) < 1e-10) dzu(ix, iy, :) = dz
-        !     enddo
-        ! enddo
-
-        write(*, *)
-        write(*, *) "Calculating weight functions for decomposing nonlinear term"
-        write(*, '(2A)') "  Loading grid info from ", trim(fngrid%grid)
-        write(*, '(2A)') "  and ", trim(fngrid%dz)
-
         allocate(uarea(B%nx, B%ny), huw(B%nx, B%ny), hus(B%nx, B%ny))
-        ! allocate(dxue(B%nx, B%ny), dyue(B%nx, B%ny), tareae(B%nx, B%ny), &
-        !          dxun(B%nx, B%ny), dyun(B%nx, B%ny), tarean(B%nx, B%ny))
-
-        ! call nc_read(fngrid%grid, 'HTN', WORK, (/B%xl_reg, B%yd_reg/), (/B%nx, B%ny/))
-        ! htn = WORK(:, :, 1, 1)
-        ! call nc_read(fngrid%grid, 'HTE', WORK, (/B%xl_reg, B%yd_reg/), (/B%nx, B%ny/))
-        ! hte = WORK(:, :, 1, 1)
         call nc_read(fngrid%grid, 'HUW', WORK, (/B%xl_reg, B%yd_reg/), (/B%nx, B%ny/))
         huw = WORK(:, :, 1, 1)
         call nc_read(fngrid%grid, 'HUS', WORK, (/B%xl_reg, B%yd_reg/), (/B%nx, B%ny/))
         hus = WORK(:, :, 1, 1)
         call nc_read(fngrid%grid, 'UAREA', WORK, (/B%xl_reg, B%yd_reg/), (/B%nx, B%ny/))
         uarea = WORK(:, :, 1, 1)
-
-        ! dyue(1:B%nx-1, :) = huw(2:B%nx, :)
-        ! dxue(1:B%nx-1, :) = htn(2:B%nx, :)
-        ! tareae = hus * hte
-
-        ! dyun(:, 1:B%ny-1) = hte(:, 2:B%ny)
-        ! dxun(:, 1:B%ny-1) = hus(:, 2:B%ny)
-        ! tarean = htn * huw
     endsubroutine
 
     subroutine calc_velw()
@@ -942,6 +916,7 @@ module zeta
         ! RHS
         advu = -advu; advv = -advv; advw = -advw
         twix = -twix; twiy = -twiy; twiz = -twiz
+        err_adv = -err_adv
 
         where(tmask)
             advu = MVALUE; advv = MVALUE; advw = MVALUE
@@ -1168,6 +1143,11 @@ module zeta
     subroutine release_zetavars_output()
         implicit none
         integer :: ig, iv
+        
+        write(*, *)
+        write(*, '(A)') '-----------------------------------------------------'
+        write(*, '(A)') 'Releasing output variables'
+
         do ig = 1, size(vgrp)
             if (vgrp(ig)%key) then 
                 do iv = 1, size(vgrp(ig)%vlist)
