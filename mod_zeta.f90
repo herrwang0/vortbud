@@ -147,13 +147,18 @@ module zeta
         if (index(func, "d") /= 0) then
             write(*, *)
             write(*, '(A)') '  ---------------------------------------------------'
-            if (index(func, "d#-") /= 0 .or. index(func, "d-#") /= 0) then
+
+            if   (index(func, "d#-") /= 0) then
+                write(*, '(A)') 'ERROR: "d#-" found in calc mode, replace it with "d-#"'
+                stop
+            endif
+            if     (index(func, "d-#") /= 0) then
                 write(*, '(A)') '  Decomposing curl of advection term (w/ nonflux twisting term, w/ subcomponents)'
                 call decomp_curladv(.False., .True.)
             elseif (index(func, "d-") /= 0 .and. index(func, "d-#") == 0) then
                 write(*, '(A)') '  Decomposing curl of advection term (w/ flux twisting term, w/ subcomponents)'
                 call decomp_curladv(.True., .True.)
-            elseif (index(func, "d#") /= 0 .and. index(func, "d#-") == 0) then
+            elseif (index(func, "d#") /= 0) then
                 write(*, '(A)') '  Decomposing curl of advection term (w/ nonflux twisting term)'
                 call decomp_curladv(.False., .False.)
             else
@@ -935,20 +940,20 @@ module zeta
         enddo
 
         ! RHS
-        advu = -advu; advv = -advv; advw = -advw;
+        advu = -advu; advv = -advv; advw = -advw
         twix = -twix; twiy = -twiy; twiz = -twiz
 
         where(tmask)
-            advu  = MVALUE; advv  = MVALUE; advw  = MVALUE
+            advu = MVALUE; advv = MVALUE; advw = MVALUE
             twix = MVALUE; twiy = MVALUE; twiz = MVALUE
         endwhere
-        advu (1:2, :, :) = MVALUE; advv (1:2, :, :) = MVALUE; advw (1:2, :, :) = MVALUE
-        twix(1:2, :, :) = MVALUE; twiy(1:2, :, :) = MVALUE; twiz(1:2, :, :) = MVALUE
-        advu (:, 1:2, :) = MVALUE; advv (:, 1:2, :) = MVALUE; advw (:, 1:2, :) = MVALUE
-        twix(:, 1:2, :) = MVALUE; twiy(:, 1:2, :) = MVALUE; twiz(:, 1:2, :) = MVALUE
-        advu (B%nx, :, :) = MVALUE; advv (B%nx, :, :) = MVALUE; advw (B%nx, :, :) = MVALUE
+        advu(1:2, : , :) = MVALUE; advv(1:2, :,  :) = MVALUE; advw(1:2, :,  :) = MVALUE
+        twix(1:2, : , :) = MVALUE; twiy(1:2, :,  :) = MVALUE; twiz(1:2, :,  :) = MVALUE
+        advu( :, 1:2, :) = MVALUE; advv( :, 1:2, :) = MVALUE; advw( :, 1:2, :) = MVALUE
+        twix( :, 1:2, :) = MVALUE; twiy( :, 1:2, :) = MVALUE; twiz( :, 1:2, :) = MVALUE
+        advu(B%nx, :, :) = MVALUE; advv(B%nx, :, :) = MVALUE; advw(B%nx, :, :) = MVALUE
         twix(B%nx, :, :) = MVALUE; twiy(B%nx, :, :) = MVALUE; twiz(B%nx, :, :) = MVALUE
-        advu (:, B%ny, :) = MVALUE; advv (:, B%ny, :) = MVALUE; advw (:, B%ny, :) = MVALUE
+        advu(:, B%ny, :) = MVALUE; advv(:, B%ny, :) = MVALUE; advw(:, B%ny, :) = MVALUE
         twix(:, B%ny, :) = MVALUE; twiy(:, B%ny, :) = MVALUE; twiz(:, B%ny, :) = MVALUE
 
         if (twif) then
@@ -1010,12 +1015,12 @@ module zeta
                 write(*, '(A, I02)') '      iz = ',  iz
                 write(*, fmts_vor) 'All components: ',  total
                 write(*, fmts_vor) 'All errors: ', err_adv(B%xi_dp, B%yi_dp, iz)
-                if ( vgrp(1)%key ) then
+                if ( vgrp(2)%key ) then
                     write(*, fmts_vor) 'Diff: ', curladv(B%xi_dp, B%yi_dp, iz) - total - err_adv(B%xi_dp, B%yi_dp, iz)
                 endif
             endif
 
-            if ( vgrp(1)%key ) then
+            if ( vgrp(2)%key ) then
                 write(*, fmts_vor) 'Curladv: ', curladv(B%xi_dp, B%yi_dp, iz)
             endif
 

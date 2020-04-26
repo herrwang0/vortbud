@@ -11,7 +11,7 @@ Program main
     integer :: ncid, iostat
 
     call load_params(func, func_m, func_me)
-    func = "ca-d-me"
+    func = "ca-d-#me"
 
     call load_const()
 
