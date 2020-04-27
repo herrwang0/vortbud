@@ -288,14 +288,15 @@ module io
             endif
         endif
 
+        ! Inserting "#" for the nonflux twisting option
         if (index(func, "d") /=0 .and. .not. flxtwi) then
             func = func(1:index(func, "d"))//"#"//func(index(func, "d")+1:9)
         endif
         if (index(func_m, "d") /=0 .and. .not. flxtwi) then
-            func_m = func_m(1:index(func, "d"))//"#"//func_m(index(func_m, "d")+1:9)
+            func_m = func_m(1:index(func_m, "d"))//"#"//func_m(index(func_m, "d")+1:9)
         endif        
         if (index(func_me, "d") /=0 .and. .not. flxtwi) then
-            func_me = func_me(1:index(func_me, "d"))//"#"//func(index(func_me, "d")+1:9)
+            func_me = func_me(1:index(func_me, "d"))//"#"//func_me(index(func_me, "d")+1:9)
         endif
 
         write(*, *)
@@ -428,7 +429,7 @@ module io
                     T%seclist(1, 1) = 1
                     T%seclist(1, 2) = 365             
                     write(T%meannm(1), '(A)') 'ann'                   
-                elseif (seced >= secst /= 0 .and. secst > 0) then
+                elseif (seced >= secst .and. secst > 0) then
                     T%nsec = 1
                     allocate(T%seclist(T%nsec, 2))
                     allocate(T%meannm(T%nsec))
@@ -478,7 +479,14 @@ module io
                     T%seclist(1, 2) = -12             
                     write(T%meannm(1), '(A)') 'ann' 
                 elseif (meanfreq=="m") then 
-                    continue
+                    T%nsec = T%ndoy
+                    allocate(T%seclist(T%nsec, 2))
+                    allocate(T%meannm(T%nsec))
+                    T%seclist(:, 1) = (/ (T%doylist(ida), ida = 1, T%ndoy) /)
+                    T%seclist(:, 2) = T%seclist(:, 1)
+                    do isec = 1, T%nsec
+                        write(T%meannm(isec), '(I0.2)') -T%seclist(isec, 1)
+                    enddo
                 else
                     write(*, '(A)') "ERROR: Mean/Eddy frequency conflicts monthly input."
                     STOP                    
@@ -566,15 +574,24 @@ module io
         write(*, *)
         write(*, '(A)') "List of sections: "
         write(*, '(A9)', advance="no") "  Start: "
-        do ida = 1, T%nsec
-            write(*, '(I3, A)', advance="no") T%seclist(ida, 1), ' '
+        do isec = 1, T%nsec
+            write(*, '(I3, A)', advance="no") T%seclist(isec, 1), ' '
         enddo
         write(*, *)
         write(*, '(A9)', advance="no") "  End: "
-        do ida = 1, T%nsec
-            write(*, '(I3, A)', advance="no") T%seclist(ida, 2), ' '
+        do isec = 1, T%nsec
+            write(*, '(I3, A)', advance="no") T%seclist(isec, 2), ' '
         enddo
         write(*, *)
+
+        if (ifmeaneddy) then 
+            write(*, *)
+            write(*, '(A)') "  Mean/eddy section names: "
+            do isec = 1, T%nsec
+                write(*, '(A, A)', advance="no") trim(T%meannm(isec)), ' '
+            enddo        
+            write(*, *)
+        endif 
     endsubroutine
 
     ! Load and average momentum terms from single timestep files
