@@ -100,7 +100,7 @@ If the daily, monthly and annual inpupt files are also averged across multiple y
             2. Turn off `ifcurl` and `ifdecomp` and turn on `ifmeaneddy`
 
 ## Algorithm
-
+See the appendix of 10.1175/JPO-D-20-0223.1
 <!-- The vertical vorticity equation now applies the full flux form, in that the stretching and tilting (twisting) terms by the relative vorticity are expressed as fluxes (as in Vallis (2006) p.167)
 Additional terms added (and substracted) to merge the non-zero divergence into the twisting terms.
 The only residuals from decomposing the nonlinear term come from reversing the operators and applying the chain rule. -->
